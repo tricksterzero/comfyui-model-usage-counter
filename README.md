@@ -37,28 +37,29 @@ Or install via ComfyUI-Manager ("Install via Git URL").
 3. Generate as usual (Queue Prompt).
 4. The models you used are written to `model_usage.json`, and the current totals are shown on the node.
 
-The node displays something like this (it appears after one generation):
+The display language follows your ComfyUI locale (`Comfy.Locale`): English by default, and
+Japanese when the locale is set to Japanese. The node displays something like this (it
+appears after one generation):
 
 ```
 [checkpoint]
-  使用回数  最終使用日時             経過  モデル名
-        12  2026-06-01 17:30:00  たった今  someCheckpoint.safetensors
-         4  2026-05-30 09:10:00     2日前  olderCheckpoint.safetensors
+  count  last used               elapsed  model
+     12  2026-06-02 00:47:48    just now  someCheckpoint.safetensors
+      4  2026-05-31 00:47:58  2 days ago  olderCheckpoint.safetensors
 [lora]
-  使用回数  最終使用日時            経過  モデル名
-        18  2026-06-01 17:29:30  たった今  detailTweaker.safetensors
-         5  2026-05-28 11:00:00     4日前  char/someCharacter.safetensors
+  count  last used               elapsed  model
+     18  2026-06-02 00:07:58  40 min ago  detailTweaker.safetensors
+      5  2026-05-29 00:47:58  4 days ago  char/someCharacter.safetensors
 [unet]
-  使用回数  最終使用日時            経過  モデル名
-        30  2026-06-01 15:18:42  2時間前  someDiffusionModel.safetensors
-         8  2026-03-21 22:05:00  2ヶ月前  anotherUnet.safetensors
+  count  last used             elapsed  model
+     30  2026-06-01 22:47:58  2 hr ago  someDiffusionModel.safetensors
+      8  2026-03-24 00:47:58  2 mo ago  anotherDiffusionModel.safetensors
 ```
 
-Each bucket starts with a header row — **使用回数** (count) / **最終使用日時** (last used) /
-**経過** (elapsed) / **モデル名** (model). Entries are ordered by **most recently used
-first**, and columns are width-aware (full-width-safe) aligned. The elapsed label is in
-Japanese: `たった今` (just now), `n分前` (n minutes ago), `n時間前` (hours), `n日前` (days),
-`nヶ月前` (months), `n年前` (years).
+Each bucket starts with a header row — **count** / **last used** / **elapsed** / **model**.
+Entries are ordered by **most recently used first**, and columns are width-aware
+(full-width-safe) aligned. Timestamps use the timezone of the machine running ComfyUI — for
+a typical local install this is your own local time.
 
 ## Recorded data
 
@@ -81,7 +82,7 @@ reinstalls. (The output directory is deliberately avoided since it can be served
 ```
 
 - `count` … number of times the model was used
-- `last_used` … when it was last used (local time, ISO 8601 with UTC offset)
+- `last_used` … when it was last used (the ComfyUI server machine's local time, ISO 8601 with UTC offset)
 
 ## Tracked models
 
@@ -146,9 +147,12 @@ Because it has no outputs, it never triggers recomputation of downstream nodes (
 etc.). A `fingerprint_inputs()` returning the current time forces the node to run on every
 generation, so counts increment even when the same model is reused.
 
-The on-node display works by returning `ui.PreviewText` from `execute()` (delivered as
-`message.text` in the `executed` event) and rendering it into a read-only multiline widget
-via the bundled JS extension (`js/model_usage_counter.js`, served through `WEB_DIRECTORY`).
+The on-node display works by returning a `ui` dict from `execute()` that carries the summary
+pre-formatted per language (`text` = English default, plus `text_en` / `text_ja`), delivered
+in the `executed` event. The bundled JS extension (`js/model_usage_counter.js`, served
+through `WEB_DIRECTORY`) reads the ComfyUI locale (`Comfy.Locale`), picks the matching
+language, and renders it into a read-only multiline widget. Timestamps are formatted on the
+backend using the ComfyUI server machine's timezone.
 
 Simple loaders are defined in `LOADER_KEYS` in `__init__.py`. Add a line in the form
 `class_type -> (model name key, bucket, folder_paths folder)` to track more. The third item

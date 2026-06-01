@@ -19,7 +19,7 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-from comfy_api.latest import ComfyExtension, io, ui
+from comfy_api.latest import ComfyExtension, io
 
 try:
     import folder_paths  # ComfyUI標準。custom_nodeロード時には利用可能。
@@ -80,25 +80,48 @@ LORA_FOLDER = "loras"     # folder_paths 上の実在チェック用フォルダ
 LORAMANAGER_LOADER = "Lora Loader (LoraManager)"
 
 # ----------------------------------------------------------------------------
-# ノード表示に使う文言。将来の多言語化に備えてここに集約し、ロジック中に
-# 日本語を直接ハードコードしない。相対表記の {n} は経過数値で置換する。
+# ノード表示に使う文言。言語ごとにここへ集約し、ロジック中に表示文字列を
+# 直接ハードコードしない。相対表記の {n} は経過数値で置換する。
+#   execute() は対応する全言語ぶんのテキストを整形して ui dict の複数キーで送り、
+#   JS 拡張が ComfyUI のロケール(Comfy.Locale)に応じて該当言語を選んで描画する。
+#   既定(text キー)は英語(グローバル公開のため)。ja ロケールのときだけ日本語にする。
+#   言語を増やすときは下に 1 ブロック足し、JS 側 pickLang() の判定とキー送出を揃える。
 # ----------------------------------------------------------------------------
 DISPLAY_TEXT = {
-    # 列ヘッダ
-    "col_count":   "使用回数",
-    "col_updated": "最終使用日時",
-    "col_elapsed": "経過",
-    "col_model":   "モデル名",
-    # 相対表記(経過時間)
-    "rel_now":     "たった今",
-    "rel_minutes": "{n}分前",
-    "rel_hours":   "{n}時間前",
-    "rel_days":    "{n}日前",
-    "rel_months":  "{n}ヶ月前",
-    "rel_years":   "{n}年前",
-    # その他
-    "empty":       "-",
-    "no_loaders":  "(対象ローダーが見つかりませんでした)",
+    "en": {
+        # 列ヘッダ
+        "col_count":   "count",
+        "col_updated": "last used",
+        "col_elapsed": "elapsed",
+        "col_model":   "model",
+        # 相対表記(経過時間)
+        "rel_now":     "just now",
+        "rel_minutes": "{n} min ago",
+        "rel_hours":   "{n} hr ago",
+        "rel_days":    "{n} days ago",
+        "rel_months":  "{n} mo ago",
+        "rel_years":   "{n} yr ago",
+        # その他
+        "empty":       "-",
+        "no_loaders":  "(no target loaders found)",
+    },
+    "ja": {
+        # 列ヘッダ
+        "col_count":   "使用回数",
+        "col_updated": "最終使用日時",
+        "col_elapsed": "経過",
+        "col_model":   "モデル名",
+        # 相対表記(経過時間)
+        "rel_now":     "たった今",
+        "rel_minutes": "{n}分前",
+        "rel_hours":   "{n}時間前",
+        "rel_days":    "{n}日前",
+        "rel_months":  "{n}ヶ月前",
+        "rel_years":   "{n}年前",
+        # その他
+        "empty":       "-",
+        "no_loaders":  "(対象ローダーが見つかりませんでした)",
+    },
 }
 
 # 集計ファイルの保存先。
@@ -324,9 +347,11 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
     return found
 
 
-def _humanize_delta(seconds: float) -> str:
-    """現在時刻との差(秒)を相対表記に変換する。差が負(未来)なら『たった今』に丸める。"""
-    t = DISPLAY_TEXT
+def _humanize_delta(seconds: float, t: dict) -> str:
+    """現在時刻との差(秒)を相対表記に変換する。差が負(未来)なら『たった今』に丸める。
+
+    t は言語別の表示文言 dict(DISPLAY_TEXT["en"] / DISPLAY_TEXT["ja"] など)。
+    """
     if seconds < 60:            # 60秒未満(負=未来日時もここに含めて丸める)
         return t["rel_now"]
     if seconds < 3600:         # 60分未満
@@ -341,11 +366,12 @@ def _humanize_delta(seconds: float) -> str:
     return t["rel_years"].format(n=days // 365)  # 365日以上(365日=1年として概算)
 
 
-def _format_last_used_parts(iso: str, now=None) -> tuple[str, str]:
+def _format_last_used_parts(iso: str, t: dict, now=None) -> tuple[str, str]:
     """TZ付きISO 8601文字列を (絶対表記, 相対表記) に分解する。
 
     絶対表記は 'YYYY-MM-DD HH:MM:SS'("T"を空白に・TZオフセット除去した形、strftimeで等価)。
-    相対表記は表示生成時の現在時刻を基準に、aware 同士の差分で算出する。
+    時刻はサーバ(Python が動く環境)のTZで記録・表示する(ローカル運用なら閲覧者の現地時刻と一致)。
+    相対表記は表示生成時の現在時刻を基準に、aware 同士の差分で算出する(t は言語別の表示文言)。
     パースできない文字列は (元文字列, "") を返す。
     """
     try:
@@ -358,7 +384,7 @@ def _format_last_used_parts(iso: str, now=None) -> tuple[str, str]:
     if dt.tzinfo is None:                         # naive なら端末TZで aware 化して揃える
         dt = dt.astimezone()
     seconds = (now - dt).total_seconds()
-    return absolute, _humanize_delta(seconds)
+    return absolute, _humanize_delta(seconds, t)
 
 
 def _disp_width(s: str) -> int:
@@ -370,6 +396,70 @@ def _pad(s: str, width: int, right: bool = False) -> str:
     """表示幅 width に揃えて半角空白でパディングする(全角を2幅として計算)。"""
     gap = " " * max(0, width - _disp_width(s))
     return gap + s if right else s + gap
+
+
+def _build_summary_text(data: dict, t: dict) -> str:
+    """集計 data を言語別表示文言 t で整形した複数行テキストにする。
+
+    t は DISPLAY_TEXT["en"] / DISPLAY_TEXT["ja"] のいずれか。execute() が対応言語ぶん
+    呼び出し、ui dict の複数キーで送る(JS 側がロケールに応じて選択する)。
+    """
+    if not data:
+        return t["no_loaders"]
+    header = (t["col_count"], t["col_updated"], t["col_elapsed"], t["col_model"])
+    right_align = (True, False, True, False)  # 使用回数・経過を右揃え(他は左揃え)
+    lines = []
+    for mtype in sorted(data):
+        entries = data[mtype]
+        if not isinstance(entries, dict):   # 破損データ: 種別バケットが dict でない
+            continue
+        lines.append(f"[{mtype}]")
+
+        # 最終使用日時(last_used)の降順で並べる。
+        #   - last_used は ISO 8601 文字列なので文字列比較で時系列順になる。
+        #   - 同一日時はモデル名の昇順(二段ソートで安定させる)。
+        #   - last_used が None / 旧int形式(dictでない)のレコードは降順ソートに
+        #     巻き込まず末尾へまとめる(末尾内はモデル名昇順)。
+        def _last_used(n):
+            # last_used は文字列のときだけ有効扱い。非文字列(破損)は None として
+            # 末尾グループへ送り、型混在によるソート時の比較エラーを防ぐ。
+            r = entries[n]
+            v = r.get("last_used") if isinstance(r, dict) else None
+            return v if isinstance(v, str) else None
+
+        dated = sorted(n for n in entries if _last_used(n))   # モデル名昇順
+        dated.sort(key=_last_used, reverse=True)              # last_used 降順(安定)
+        undated = sorted(n for n in entries if not _last_used(n))
+
+        # 各行を (使用回数, 最終使用日時, 経過, モデル名) の4セルに整える。
+        rows = []
+        for name in dated + undated:
+            rec = entries[name]
+            if isinstance(rec, dict):
+                count = rec.get("count", 0)
+                lu = rec.get("last_used")
+                if isinstance(lu, str) and lu:
+                    updated, elapsed = _format_last_used_parts(lu, t)
+                else:                          # last_used 欠落/非文字列のフォールバック
+                    updated, elapsed = t["empty"], ""
+            else:                              # 旧int形式のフォールバック
+                count, updated, elapsed = rec, t["empty"], ""
+            rows.append((str(count), updated, elapsed, name))
+
+        # 列幅をヘッダと全行の最大表示幅で決め、全角を考慮して揃える。
+        widths = [
+            max(_disp_width(header[i]), *(_disp_width(r[i]) for r in rows))
+            if rows else _disp_width(header[i])
+            for i in range(4)
+        ]
+
+        def _row(cells):
+            parts = [_pad(cells[i], widths[i], right_align[i]) for i in range(4)]
+            return ("  " + "  ".join(parts)).rstrip()
+
+        lines.append(_row(header))
+        lines.extend(_row(r) for r in rows)
+    return "\n".join(lines)
 
 
 class ModelUsageCounter(io.ComfyNode):
@@ -438,67 +528,18 @@ class ModelUsageCounter(io.ComfyNode):
         else:
             data = _load_counts()  # 表示用に読むだけ(加算しない)
 
-        # ノード上に現在の集計を表示(閲覧用。全カウンタで表示してよい)
-        if data:
-            t = DISPLAY_TEXT
-            header = (t["col_count"], t["col_updated"], t["col_elapsed"], t["col_model"])
-            right_align = (True, False, True, False)  # 使用回数・経過を右揃え(他は左揃え)
-            lines = []
-            for mtype in sorted(data):
-                entries = data[mtype]
-                if not isinstance(entries, dict):   # 破損データ: 種別バケットが dict でない
-                    continue
-                lines.append(f"[{mtype}]")
-
-                # 最終使用日時(last_used)の降順で並べる。
-                #   - last_used は ISO 8601 文字列なので文字列比較で時系列順になる。
-                #   - 同一日時はモデル名の昇順(二段ソートで安定させる)。
-                #   - last_used が None / 旧int形式(dictでない)のレコードは降順ソートに
-                #     巻き込まず末尾へまとめる(末尾内はモデル名昇順)。
-                def _last_used(n):
-                    # last_used は文字列のときだけ有効扱い。非文字列(破損)は None として
-                    # 末尾グループへ送り、型混在によるソート時の比較エラーを防ぐ。
-                    r = entries[n]
-                    v = r.get("last_used") if isinstance(r, dict) else None
-                    return v if isinstance(v, str) else None
-
-                dated = sorted(n for n in entries if _last_used(n))   # モデル名昇順
-                dated.sort(key=_last_used, reverse=True)              # last_used 降順(安定)
-                undated = sorted(n for n in entries if not _last_used(n))
-
-                # 各行を (使用回数, 最終使用日時, 経過, モデル名) の4セルに整える。
-                rows = []
-                for name in dated + undated:
-                    rec = entries[name]
-                    if isinstance(rec, dict):
-                        count = rec.get("count", 0)
-                        lu = rec.get("last_used")
-                        if isinstance(lu, str) and lu:
-                            updated, elapsed = _format_last_used_parts(lu)
-                        else:                          # last_used 欠落/非文字列のフォールバック
-                            updated, elapsed = t["empty"], ""
-                    else:                              # 旧int形式のフォールバック
-                        count, updated, elapsed = rec, t["empty"], ""
-                    rows.append((str(count), updated, elapsed, name))
-
-                # 列幅をヘッダと全行の最大表示幅で決め、全角を考慮して揃える。
-                widths = [
-                    max(_disp_width(header[i]), *(_disp_width(r[i]) for r in rows))
-                    if rows else _disp_width(header[i])
-                    for i in range(4)
-                ]
-
-                def _row(cells):
-                    parts = [_pad(cells[i], widths[i], right_align[i]) for i in range(4)]
-                    return ("  " + "  ".join(parts)).rstrip()
-
-                lines.append(_row(header))
-                lines.extend(_row(r) for r in rows)
-            text = "\n".join(lines)
-        else:
-            text = DISPLAY_TEXT["no_loaders"]
-
-        return io.NodeOutput(ui=ui.PreviewText(text))
+        # ノード上に現在の集計を表示(閲覧用。全カウンタで表示してよい)。
+        # 対応言語ぶんのテキストを整形して ui dict の複数キーで送り、JS 拡張が
+        # ComfyUI のロケール(Comfy.Locale)に応じて該当言語を選んで描画する。
+        #   - 既定キー "text" は英語(グローバル公開のため。他ツールのフォールバックにも使われる)。
+        #   - ui dict の各値は実行側のマージ処理(for y in x[k])の都合でタプルにする。
+        text_en = _build_summary_text(data, DISPLAY_TEXT["en"])
+        text_ja = _build_summary_text(data, DISPLAY_TEXT["ja"])
+        return io.NodeOutput(ui={
+            "text": (text_en,),
+            "text_en": (text_en,),
+            "text_ja": (text_ja,),
+        })
 
 
 # フロントエンドに JS 拡張を配信する。
