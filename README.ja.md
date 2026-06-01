@@ -100,6 +100,21 @@ user ディレクトリ内の `model-usage-counter/` フォルダに保存され
 どのローダー由来でも、LoRA はすべて `lora` 種別にまとめて集計します。ほかの単純なローダーに
 対応させたい場合は、`__init__.py` の `LOADER_KEYS` に1行追加します（詳しくは下記「仕組み」を参照）。
 
+## 対応拡張
+
+ComfyUI 本体のローダー（`CheckpointLoaderSimple` / `UNETLoader` / `LoraLoader` /
+`LoraLoaderModelOnly`）はそのまま動作します。以下のサードパーティ製拡張にも対応しています
+（各リポジトリまたは ComfyUI-Manager からインストールできます）。
+
+### [rgthree-comfy](https://github.com/rgthree/rgthree-comfy)
+Power Lora Loader — 有効（ON）な LoRA をそれぞれ数えます。
+
+### [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts)
+Lora Loader（`LoraLoader|pysssss`） — 読み込んだ LoRA を数えます。
+
+### [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)
+Lora Loader (LoraManager) — 有効（active）な LoRA をそれぞれ数えます。
+
 ## 制限事項
 
 - **`batch_count > 1` のとき**は、生成枚数の分だけカウントが増えます（ワークフローの実行回数ではなく、

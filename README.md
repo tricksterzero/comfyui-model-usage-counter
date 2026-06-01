@@ -103,6 +103,21 @@ All LoRAs are grouped together under the `lora` bucket regardless of which loade
 from. To track other simple loaders, add a line to `LOADER_KEYS` in `__init__.py` (see "How
 it works" below).
 
+## Supported extensions
+
+Built-in ComfyUI loaders (`CheckpointLoaderSimple`, `UNETLoader`, `LoraLoader`,
+`LoraLoaderModelOnly`) work out of the box. The following third-party extensions are also
+supported — install them from their repositories or via ComfyUI-Manager:
+
+### [rgthree-comfy](https://github.com/rgthree/rgthree-comfy)
+Power Lora Loader — counts each enabled (on) LoRA.
+
+### [ComfyUI-Custom-Scripts](https://github.com/pythongosssss/ComfyUI-Custom-Scripts)
+Lora Loader (`LoraLoader|pysssss`) — counts the loaded LoRA.
+
+### [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)
+Lora Loader (LoraManager) — counts each active LoRA.
+
 ## Limitations
 
 - **With `batch_count > 1`**, the count increases by the number of images generated
