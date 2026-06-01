@@ -13,6 +13,7 @@
 import time
 import json
 import threading
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +40,28 @@ except ImportError:
 LOADER_KEYS = {
     "CheckpointLoaderSimple": ("ckpt_name", "checkpoint"),
     "UNETLoader":             ("unet_name", "unet"),
+}
+
+# ----------------------------------------------------------------------------
+# ノード表示に使う文言。将来の多言語化に備えてここに集約し、ロジック中に
+# 日本語を直接ハードコードしない。相対表記の {n} は経過数値で置換する。
+# ----------------------------------------------------------------------------
+DISPLAY_TEXT = {
+    # 列ヘッダ
+    "col_count":   "使用回数",
+    "col_updated": "更新日時",
+    "col_elapsed": "経過",
+    "col_model":   "モデル名",
+    # 相対表記(経過時間)
+    "rel_now":     "たった今",
+    "rel_minutes": "{n}分前",
+    "rel_hours":   "{n}時間前",
+    "rel_days":    "{n}日前",
+    "rel_months":  "{n}ヶ月前",
+    "rel_years":   "{n}年前",
+    # その他
+    "empty":       "-",
+    "no_loaders":  "(対象ローダーが見つかりませんでした)",
 }
 
 # 集計ファイルの保存先。
@@ -109,38 +132,50 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
 
 def _humanize_delta(seconds: float) -> str:
     """現在時刻との差(秒)を相対表記に変換する。差が負(未来)なら『たった今』に丸める。"""
+    t = DISPLAY_TEXT
     if seconds < 60:            # 60秒未満(負=未来日時もここに含めて丸める)
-        return "たった今"
+        return t["rel_now"]
     if seconds < 3600:         # 60分未満
-        return f"{int(seconds // 60)}分前"
+        return t["rel_minutes"].format(n=int(seconds // 60))
     if seconds < 86400:        # 24時間未満
-        return f"{int(seconds // 3600)}時間前"
+        return t["rel_hours"].format(n=int(seconds // 3600))
     days = int(seconds // 86400)
     if days < 30:              # 30日未満
-        return f"{days}日前"
+        return t["rel_days"].format(n=days)
     if days < 365:             # 365日未満(30日=1ヶ月として概算)
-        return f"{days // 30}ヶ月前"
-    return f"{days // 365}年前"  # 365日以上(365日=1年として概算)
+        return t["rel_months"].format(n=days // 30)
+    return t["rel_years"].format(n=days // 365)  # 365日以上(365日=1年として概算)
 
 
-def _format_last_used(iso: str, now=None) -> str:
-    """TZ付きISO 8601文字列を 'YYYY-MM-DD HH:MM:SS (相対表記)' に整形する。
+def _format_last_used_parts(iso: str, now=None) -> tuple[str, str]:
+    """TZ付きISO 8601文字列を (絶対表記, 相対表記) に分解する。
 
-    絶対表記は "T" を空白に・TZオフセットを除いた形(strftime で等価)。
+    絶対表記は 'YYYY-MM-DD HH:MM:SS'("T"を空白に・TZオフセット除去した形、strftimeで等価)。
     相対表記は表示生成時の現在時刻を基準に、aware 同士の差分で算出する。
-    パースできない文字列は素通しで返す。
+    パースできない文字列は (元文字列, "") を返す。
     """
     try:
         dt = datetime.fromisoformat(iso)
     except (TypeError, ValueError):
-        return iso
-    absolute = dt.strftime("%Y-%m-%d %H:%M:%S")  # "T"→空白・TZオフセット除去に相当
+        return iso, ""
+    absolute = dt.strftime("%Y-%m-%d %H:%M:%S")
     if now is None:
         now = datetime.now().astimezone()
     if dt.tzinfo is None:                         # naive なら端末TZで aware 化して揃える
         dt = dt.astimezone()
     seconds = (now - dt).total_seconds()
-    return f"{absolute} ({_humanize_delta(seconds)})"
+    return absolute, _humanize_delta(seconds)
+
+
+def _disp_width(s: str) -> int:
+    """等幅フォント上の表示幅を返す。全角(east_asian_width が F/W/A)=2、他=1 で数える。"""
+    return sum(2 if unicodedata.east_asian_width(c) in ("F", "W", "A") else 1 for c in s)
+
+
+def _pad(s: str, width: int, right: bool = False) -> str:
+    """表示幅 width に揃えて半角空白でパディングする(全角を2幅として計算)。"""
+    gap = " " * max(0, width - _disp_width(s))
+    return gap + s if right else s + gap
 
 
 class ModelUsageCounter(io.ComfyNode):
@@ -211,6 +246,9 @@ class ModelUsageCounter(io.ComfyNode):
 
         # ノード上に現在の集計を表示(閲覧用。全カウンタで表示してよい)
         if data:
+            t = DISPLAY_TEXT
+            header = (t["col_count"], t["col_updated"], t["col_elapsed"], t["col_model"])
+            right_align = (True, False, True, False)  # 使用回数・経過を右揃え(他は左揃え)
             lines = []
             for mtype in sorted(data):
                 lines.append(f"[{mtype}]")
@@ -229,17 +267,37 @@ class ModelUsageCounter(io.ComfyNode):
                 dated.sort(key=_last_used, reverse=True)              # last_used 降順(安定)
                 undated = sorted(n for n in entries if not _last_used(n))
 
+                # 各行を (使用回数, 更新日時, 経過, モデル名) の4セルに整える。
+                rows = []
                 for name in dated + undated:
                     rec = entries[name]
                     if isinstance(rec, dict):
+                        count = rec.get("count", 0)
                         lu = rec.get("last_used")
-                        last = _format_last_used(lu) if lu else "-"
-                        lines.append(f"  {rec.get('count', 0):>5}  {last}  {name}")
-                    else:
-                        lines.append(f"  {rec:>5}  {'-':<25}  {name}")
+                        if lu:
+                            updated, elapsed = _format_last_used_parts(lu)
+                        else:                          # last_used 欠落のフォールバック
+                            updated, elapsed = t["empty"], ""
+                    else:                              # 旧int形式のフォールバック
+                        count, updated, elapsed = rec, t["empty"], ""
+                    rows.append((str(count), updated, elapsed, name))
+
+                # 列幅をヘッダと全行の最大表示幅で決め、全角を考慮して揃える。
+                widths = [
+                    max(_disp_width(header[i]), *(_disp_width(r[i]) for r in rows))
+                    if rows else _disp_width(header[i])
+                    for i in range(4)
+                ]
+
+                def _row(cells):
+                    parts = [_pad(cells[i], widths[i], right_align[i]) for i in range(4)]
+                    return ("  " + "  ".join(parts)).rstrip()
+
+                lines.append(_row(header))
+                lines.extend(_row(r) for r in rows)
             text = "\n".join(lines)
         else:
-            text = "(対象ローダーが見つかりませんでした)"
+            text = DISPLAY_TEXT["no_loaders"]
 
         return io.NodeOutput(ui=ui.PreviewText(text))
 
