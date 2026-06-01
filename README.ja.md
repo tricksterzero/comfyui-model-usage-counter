@@ -56,8 +56,9 @@ git clone https://github.com/tricksterzero/comfyui-model-usage-counter
 ## 記録されるデータ
 
 データは `model_usage.json` に保存されます。**このリポジトリ内ではなく**、ComfyUI の
-user / output ディレクトリ内の `model-usage-counter/` フォルダに保存されるため、
-アップデートや再インストールで消えることはありません。
+user ディレクトリ内の `model-usage-counter/` フォルダに保存されるため、アップデートや
+再インストールで消えることはありません。（output ディレクトリは HTTP 配信され得るため
+保存先には使いません。）
 
 ```json
 {

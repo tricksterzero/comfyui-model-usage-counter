@@ -57,10 +57,12 @@ LOADER_KEYS = {
   対策しないと設置個数分だけ多重加算される。`execute()` の `is_primary` 判定により
   **最小 node_id を持つ1つだけ**が加算する。表示（PreviewText）は全ノードで行ってよい。
   この判定ロジックを壊さないこと。
-- **保存先はリポジトリ外**: `user` → `output` ディレクトリの順で探し
-  （`folder_paths.get_user_directory` / `get_output_directory`）、
-  `model-usage-counter/model_usage.json` に保存する。利用者の git pull / 再インストールで
-  データが消えたりリポジトリを汚したりしないための方針。維持すること。
+- **保存先はリポジトリ外**: `folder_paths.get_user_directory()` 直下の
+  `model-usage-counter/model_usage.json`、取得不可ならノードフォルダ直下にフォールバック。
+  利用者の git pull / 再インストールでデータが消えたりリポジトリを汚したりしないための方針。
+  セキュリティ上、**output ディレクトリは使わない**（`/view` で Web 配信され集計データが
+  露出し得るため）。user ディレクトリ直下は `/userdata`（`user/{user_id}/` 配下）の対象外で
+  安全。この方針を維持すること。
 - **データ形式**: `{"count": int, "last_used": isoformat}`。旧形式（int 値）も読めるよう
   後方互換の読み出しを保持している（`isinstance(rec, dict)` 分岐）。崩さないこと。
 - **batch 仕様**: `batch_count > 1` のときは画像枚数分カウントされる（ワークフロー実行単位ではない）。

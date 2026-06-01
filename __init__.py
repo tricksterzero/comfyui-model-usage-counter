@@ -71,7 +71,12 @@ DISPLAY_TEXT = {
 # 集計ファイルの保存先。
 #   公開ノードでは、利用者の git pull / 再インストールでデータが消えたり
 #   リポジトリを汚したりしないよう、ノードフォルダの外に保存する。
-#   user ディレクトリ → output ディレクトリ → (最終手段)ノードフォルダ直下、の順で試す。
+#   user ディレクトリ → (最終手段)ノードフォルダ直下、の順で試す。
+#
+#   セキュリティ: output ディレクトリは /view で Web 配信され得るため保存先に使わない
+#   (集計データ=使用モデル一覧・利用日時が第三者に取得され得る)。user ディレクトリの
+#   直下は /userdata の配信対象(user/{user_id}/ 配下)の外なので露出しない。最終手段の
+#   ノードフォルダ直下も Web 配信対象外(配信されるのは WEB_DIRECTORY の js/ のみ)。
 _lock = threading.Lock()
 
 
@@ -79,14 +84,12 @@ def _count_file() -> Path:
     base = None
     if folder_paths is not None:
         # get_user_directory は存在しないバージョンもあり得るため try で吸収する(未確認)。
-        for getter in ("get_user_directory", "get_output_directory"):
-            fn = getattr(folder_paths, getter, None)
-            if callable(fn):
-                try:
-                    base = Path(fn())
-                    break
-                except Exception:
-                    continue
+        fn = getattr(folder_paths, "get_user_directory", None)
+        if callable(fn):
+            try:
+                base = Path(fn())
+            except Exception:
+                base = None
     if base is None:
         base = Path(__file__).parent
     data_dir = base / "model-usage-counter"

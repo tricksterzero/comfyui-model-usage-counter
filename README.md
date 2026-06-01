@@ -59,8 +59,8 @@ Japanese: `たった今` (just now), `n分前` (n minutes ago), `n時間前` (ho
 ## Recorded data
 
 Data is saved to `model_usage.json`. It lives in a `model-usage-counter/` folder inside
-ComfyUI's user / output directory — **not** inside this repository — so it survives updates
-and reinstalls.
+ComfyUI's user directory — **not** inside this repository — so it survives updates and
+reinstalls. (The output directory is deliberately avoided since it can be served over HTTP.)
 
 ```json
 {
