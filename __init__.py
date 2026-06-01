@@ -26,20 +26,24 @@ except ImportError:
 
 # ----------------------------------------------------------------------------
 # カウント対象ローダーの定義
-#   class_type -> (モデル名が入る inputs のキー, 集計上の種別ラベル)
+#   class_type -> (モデル名が入る inputs のキー, 集計上の種別ラベル, 実在チェック用フォルダ名)
+#
+# 3番目は folder_paths.get_filename_list(...) に渡すフォルダ名。実在するモデル名のみを
+# 記録し、prompt に任意文字列を入れて model_usage.json を無制限に肥大化させる攻撃を防ぐ。
 #
 # 後から種類を増やしたい場合はここに1行足すだけ。
-#   例) "ImageOnlyCheckpointLoader": ("ckpt_name", "checkpoint")
-#       "UnetLoaderGGUF":            ("unet_name", "unet")   # GGUFを使う場合
+#   例) "ImageOnlyCheckpointLoader": ("ckpt_name", "checkpoint", "checkpoints")
+#       "UnetLoaderGGUF":            ("unet_name", "unet", "diffusion_models")  # GGUFを使う場合
 #
-# 注意(未確認): 追加するローダーの class_type 名やキー名は拡張の実装に依存する。
-#   実機の出力PNGメタデータ(prompt)で class_type と inputs のキーを一度確認すること。
+# 注意(未確認): 追加するローダーの class_type 名・キー名・フォルダ名は拡張の実装に依存する。
+#   実機の出力PNGメタデータ(prompt)で class_type と inputs のキーを、対象拡張の INPUT_TYPES で
+#   folder_paths のフォルダ名を一度確認すること。
 # 注意: rgthree Power Lora Loader 等の LoRA は inputs 構造が特殊(複数LoRAを内部にまとめる)で、
 #   下の単純なキー抽出では拾えない。LoRA対応は extract_models() 内に専用分岐を足す形になる。
 # ----------------------------------------------------------------------------
 LOADER_KEYS = {
-    "CheckpointLoaderSimple": ("ckpt_name", "checkpoint"),
-    "UNETLoader":             ("unet_name", "unet"),
+    "CheckpointLoaderSimple": ("ckpt_name", "checkpoint", "checkpoints"),
+    "UNETLoader":             ("unet_name", "unet", "diffusion_models"),
 }
 
 # ----------------------------------------------------------------------------
@@ -107,15 +111,40 @@ def _save_counts(data: dict) -> None:
     )
 
 
+def _valid_names(folder: str, cache: dict):
+    """folder_paths から該当カテゴリの実在ファイル名の集合を返す。
+
+    取得できない場合(folder_paths 不在/API変更/例外)は None を返す。
+    同一走査内で同じフォルダを何度も問い合わせないよう cache に控える。
+    """
+    if folder in cache:
+        return cache[folder]
+    names = None
+    getter = getattr(folder_paths, "get_filename_list", None) if folder_paths else None
+    if callable(getter):
+        try:
+            names = set(getter(folder))
+        except Exception:
+            names = None
+    cache[folder] = names
+    return names
+
+
 def extract_models(prompt: dict) -> list[tuple[str, str]]:
     """prompt(API形式 dict)を走査し、(種別, モデル名) のリストを返す。
 
     prompt の形は {node_id: {"class_type": str, "inputs": {...}}, ...}。
     同じローダーが複数あればその数だけ拾う(= 実際に使った回数)。
+
+    セキュリティ: prompt は投稿者が制御できるため、任意のモデル名文字列が入り得る。
+    folder_paths の実在ファイル一覧に含まれる名前のみ記録し、未知の文字列による
+    model_usage.json の無制限肥大化(ディスク枯渇)を防ぐ。folder_paths が利用できない
+    場合のみ、機能を優先して検証をスキップする。
     """
     found = []
     if not isinstance(prompt, dict):
         return found
+    valid_cache = {}
     for node in prompt.values():
         if not isinstance(node, dict):
             continue
@@ -123,10 +152,14 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
         spec = LOADER_KEYS.get(ct)
         if spec is None:
             continue
-        key, mtype = spec
+        key, mtype, folder = spec
         name = node.get("inputs", {}).get(key)
-        if isinstance(name, str) and name:
-            found.append((mtype, name))
+        if not (isinstance(name, str) and name):
+            continue
+        valid = _valid_names(folder, valid_cache)
+        if valid is not None and name not in valid:
+            continue  # 実在しないモデル名は記録しない
+        found.append((mtype, name))
     return found
 
 

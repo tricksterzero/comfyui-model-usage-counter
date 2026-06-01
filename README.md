@@ -123,8 +123,11 @@ The on-node display works by returning `ui.PreviewText` from `execute()` (delive
 via the bundled JS extension (`js/model_usage_counter.js`, served through `WEB_DIRECTORY`).
 
 Tracked loaders are defined in `LOADER_KEYS` in `__init__.py`. Add a line in the form
-`class_type -> (model name key, bucket)` to track more. Confirm the exact `class_type` and
-inputs key for a new loader from the prompt metadata of an actual output PNG.
+`class_type -> (model name key, bucket, folder_paths folder)` to track more. The third item
+is the `folder_paths` category used to verify the model exists: only names present in
+`folder_paths.get_filename_list(...)` are recorded, so arbitrary strings in a submitted
+prompt can't bloat `model_usage.json`. Confirm the `class_type` and inputs key from the
+prompt metadata of an actual output PNG, and the folder name from the loader's `INPUT_TYPES`.
 
 </details>
 
