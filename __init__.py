@@ -107,6 +107,42 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
     return found
 
 
+def _humanize_delta(seconds: float) -> str:
+    """現在時刻との差(秒)を相対表記に変換する。差が負(未来)なら『たった今』に丸める。"""
+    if seconds < 60:            # 60秒未満(負=未来日時もここに含めて丸める)
+        return "たった今"
+    if seconds < 3600:         # 60分未満
+        return f"{int(seconds // 60)}分前"
+    if seconds < 86400:        # 24時間未満
+        return f"{int(seconds // 3600)}時間前"
+    days = int(seconds // 86400)
+    if days < 30:              # 30日未満
+        return f"{days}日前"
+    if days < 365:             # 365日未満(30日=1ヶ月として概算)
+        return f"{days // 30}ヶ月前"
+    return f"{days // 365}年前"  # 365日以上(365日=1年として概算)
+
+
+def _format_last_used(iso: str, now=None) -> str:
+    """TZ付きISO 8601文字列を 'YYYY-MM-DD HH:MM:SS (相対表記)' に整形する。
+
+    絶対表記は "T" を空白に・TZオフセットを除いた形(strftime で等価)。
+    相対表記は表示生成時の現在時刻を基準に、aware 同士の差分で算出する。
+    パースできない文字列は素通しで返す。
+    """
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return iso
+    absolute = dt.strftime("%Y-%m-%d %H:%M:%S")  # "T"→空白・TZオフセット除去に相当
+    if now is None:
+        now = datetime.now().astimezone()
+    if dt.tzinfo is None:                         # naive なら端末TZで aware 化して揃える
+        dt = dt.astimezone()
+    seconds = (now - dt).total_seconds()
+    return f"{absolute} ({_humanize_delta(seconds)})"
+
+
 class ModelUsageCounter(io.ComfyNode):
     NODE_ID = "MUC_ModelUsageCounter"
 
@@ -180,14 +216,24 @@ class ModelUsageCounter(io.ComfyNode):
                 lines.append(f"[{mtype}]")
                 entries = data[mtype]
 
-                def _count_of(n):
+                # 最終使用日時(last_used)の降順で並べる。
+                #   - last_used は ISO 8601 文字列なので文字列比較で時系列順になる。
+                #   - 同一日時はモデル名の昇順(二段ソートで安定させる)。
+                #   - last_used が None / 旧int形式(dictでない)のレコードは降順ソートに
+                #     巻き込まず末尾へまとめる(末尾内はモデル名昇順)。
+                def _last_used(n):
                     r = entries[n]
-                    return r.get("count", 0) if isinstance(r, dict) else r
+                    return r.get("last_used") if isinstance(r, dict) else None
 
-                for name in sorted(entries, key=lambda n: -_count_of(n)):
+                dated = sorted(n for n in entries if _last_used(n))   # モデル名昇順
+                dated.sort(key=_last_used, reverse=True)              # last_used 降順(安定)
+                undated = sorted(n for n in entries if not _last_used(n))
+
+                for name in dated + undated:
                     rec = entries[name]
                     if isinstance(rec, dict):
-                        last = rec.get("last_used") or "-"
+                        lu = rec.get("last_used")
+                        last = _format_last_used(lu) if lu else "-"
                         lines.append(f"  {rec.get('count', 0):>5}  {last}  {name}")
                     else:
                         lines.append(f"  {rec:>5}  {'-':<25}  {name}")
