@@ -52,6 +52,9 @@ LOADER_KEYS = {
     # rgthree Power Lora Loader と同じ "lora" 種別に集約する。
     "LoraLoader":             ("lora_name", "lora", "loras"),
     "LoraLoaderModelOnly":    ("lora_name", "lora", "loras"),
+    # pythongosssss Custom-Scripts の Lora Loader。標準 LoraLoader のサブクラス
+    # (LoraLoaderWithImages)で inputs キーは "lora_name" のまま。
+    "LoraLoader|pysssss":     ("lora_name", "lora", "loras"),
 }
 
 # ----------------------------------------------------------------------------

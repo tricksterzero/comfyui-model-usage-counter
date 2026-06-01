@@ -91,6 +91,7 @@ user ディレクトリ内の `model-usage-counter/` フォルダに保存され
 | `UNETLoader`                        | unet         |
 | `LoraLoader`（Load LoRA）           | lora         |
 | `LoraLoaderModelOnly`（Load LoRA）  | lora         |
+| `LoraLoader\|pysssss`（Custom-Scripts） | lora      |
 | `Power Lora Loader (rgthree)`       | lora         |
 
 rgthree **Power Lora Loader** では、トグルが **ON** の LoRA だけを数えます

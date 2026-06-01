@@ -93,6 +93,7 @@ These loaders are currently counted:
 | `UNETLoader`                        | unet         |
 | `LoraLoader` (Load LoRA)            | lora         |
 | `LoraLoaderModelOnly` (Load LoRA)   | lora         |
+| `LoraLoader\|pysssss` (Custom-Scripts) | lora      |
 | `Power Lora Loader (rgthree)`       | lora         |
 
 For the rgthree **Power Lora Loader**, only the LoRAs whose toggle is **on** are counted
