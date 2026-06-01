@@ -49,7 +49,7 @@ LOADER_KEYS = {
 DISPLAY_TEXT = {
     # 列ヘッダ
     "col_count":   "使用回数",
-    "col_updated": "更新日時",
+    "col_updated": "最終使用日時",
     "col_elapsed": "経過",
     "col_model":   "モデル名",
     # 相対表記(経過時間)
@@ -267,7 +267,7 @@ class ModelUsageCounter(io.ComfyNode):
                 dated.sort(key=_last_used, reverse=True)              # last_used 降順(安定)
                 undated = sorted(n for n in entries if not _last_used(n))
 
-                # 各行を (使用回数, 更新日時, 経過, モデル名) の4セルに整える。
+                # 各行を (使用回数, 最終使用日時, 経過, モデル名) の4セルに整える。
                 rows = []
                 for name in dated + undated:
                     rec = entries[name]
