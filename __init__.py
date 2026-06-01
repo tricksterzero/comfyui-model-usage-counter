@@ -198,6 +198,14 @@ class ModelUsageCounter(io.ComfyNode):
         return io.NodeOutput(ui=ui.PreviewText(text))
 
 
+# フロントエンドに JS 拡張を配信する。
+#   execute() が返す PreviewText(= "executed" イベントの message.text)を、
+#   js/model_usage_counter.js がノード上の読み取り専用テキスト欄に描画する。
+#   コア側の text 表示挙動はフロントのバージョンに依存して不確実なため、
+#   自前のウィジェットで確実に表示させる。
+WEB_DIRECTORY = "./js"
+
+
 class ModelUsageCounterExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [ModelUsageCounter]
