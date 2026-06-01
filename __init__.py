@@ -107,10 +107,12 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
 
 
 class ModelUsageCounter(io.ComfyNode):
+    NODE_ID = "MUC_ModelUsageCounter"
+
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
-            node_id="MUC_ModelUsageCounter",
+            node_id=cls.NODE_ID,
             display_name="Model Usage Counter",
             category="utils/stats",
             description=(
@@ -119,7 +121,8 @@ class ModelUsageCounter(io.ComfyNode):
             ),
             inputs=[],                 # 入力なし(prompt は hidden で取得)
             outputs=[],                # 出力なし → 下流の再計算を誘発しない
-            hidden=[io.Hidden.prompt], # is_output_node でも自動付与されるが明示しておく
+            # prompt: グラフ全体の走査用 / unique_id: 複数設置時の重複加算防止用
+            hidden=[io.Hidden.prompt, io.Hidden.unique_id],
             is_output_node=True,       # 末端ノードとして毎回実行される
             not_idempotent=True,       # キャッシュ出力を再利用しない
         )
@@ -133,16 +136,36 @@ class ModelUsageCounter(io.ComfyNode):
     @classmethod
     def execute(cls) -> io.NodeOutput:
         prompt = cls.hidden.prompt
-        models = extract_models(prompt)
+        my_id = cls.hidden.unique_id
 
-        with _lock:
-            data = _load_counts()
-            for mtype, name in models:
-                bucket = data.setdefault(mtype, {})
-                bucket[name] = bucket.get(name, 0) + 1
-            _save_counts(data)
+        # 同一グラフに複数の Model Usage Counter が置かれた場合、各ノードが
+        # それぞれグラフ全体を走査するため、対策しないと設置個数分だけ多重加算される。
+        # そこで、グラフ内のカウンタノードのうち最小 node_id を持つ1つだけが加算を行う。
+        # (node_id は文字列で来る場合があるため、数値化できれば数値で、できなければ
+        #  文字列のまま比較してフォールバックする。)
+        counter_ids = [
+            nid for nid, node in (prompt or {}).items()
+            if isinstance(node, dict) and node.get("class_type") == cls.NODE_ID
+        ]
 
-        # ノード上に現在の集計を表示(閲覧用)
+        def _key(v):
+            s = str(v)
+            return (0, int(s)) if s.lstrip("-").isdigit() else (1, s)
+
+        is_primary = (not counter_ids) or (str(my_id) == min(counter_ids, key=_key))
+
+        if is_primary:
+            models = extract_models(prompt)
+            with _lock:
+                data = _load_counts()
+                for mtype, name in models:
+                    bucket = data.setdefault(mtype, {})
+                    bucket[name] = bucket.get(name, 0) + 1
+                _save_counts(data)
+        else:
+            data = _load_counts()  # 表示用に読むだけ(加算しない)
+
+        # ノード上に現在の集計を表示(閲覧用。全カウンタで表示してよい)
         if data:
             lines = []
             for mtype in sorted(data):
