@@ -1,0 +1,19 @@
+# リポジトリ内のテキストはLFに正規化する。
+* text=auto eol=lf
+
+# 拡張子ごとに明示(意図を分かりやすくする)
+*.py    text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# バイナリは変換しない(アイコン・バナー画像などを追加したとき壊れないように)
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.svg   text eol=lf
+*.webp  binary

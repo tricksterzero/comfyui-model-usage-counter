@@ -1,0 +1,16 @@
+# 生成される集計データ(フォールバックでノードフォルダ内に出来た場合に備えて除外)
+model-usage-counter/
+model_usage.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

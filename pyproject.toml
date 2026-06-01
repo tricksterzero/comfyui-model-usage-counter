@@ -1,0 +1,25 @@
+[project]
+# Registry の name は "ComfyUI" を含めず、小文字・ハイフン区切りにする(公式推奨)。
+# 英数字・ハイフン・アンダースコア・ピリオドのみ、先頭は数字・記号不可。
+name = "model-usage-counter"
+version = "1.0.0"
+description = "Records how many times each model (checkpoint / diffusion model) is used, incremented on every generation."
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+classifiers = [
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+# <your-username> を自分の GitHub ユーザー名に置き換える。
+Repository = "https://github.com/tricksterzero/comfyui-model-usage-counter"
+"Bug Tracker" = "https://github.com/tricksterzero/comfyui-model-usage-counter/issues"
+
+[tool.comfy]
+# PublisherId は Comfy Registry のアカウント ID(通常 GitHub ユーザー名と一致させる)。
+PublisherId = "<your-publisher-id>"
+DisplayName = "Model Usage Counter"
+# requires-comfyui は任意。本ノードは V3 schema(comfy_api.latest)を使うため、
+# それに対応した比較的新しい ComfyUI が必要。具体的な下限バージョンは未確認のため、
+# 実機で動作確認したバージョンを基準に設定すること。例:
+# requires-comfyui = ">=0.3.40"
