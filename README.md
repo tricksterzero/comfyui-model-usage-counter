@@ -41,10 +41,16 @@ The node displays something like this (it appears after one generation):
 
 ```
 [checkpoint]
-     12  2026-06-01T14:30:00+09:00  someCheckpoint.safetensors
+     12  2026-06-01 17:14:35 (たった今)  someCheckpoint.safetensors
+      4  2026-05-30 09:10:00 (2日前)     olderCheckpoint.safetensors
 [unet]
-     30  2026-06-01T15:02:11+09:00  someDiffusionModel.safetensors
+     30  2026-06-01 15:02:11 (2時間前)   someDiffusionModel.safetensors
 ```
+
+Within each bucket, entries are ordered by **most recently used first**. Each timestamp is
+shown as an absolute time (`YYYY-MM-DD HH:MM:SS`) plus a relative one. The relative label is
+in Japanese: `たった今` (just now), `n分前` (n minutes ago), `n時間前` (hours), `n日前`
+(days), `nヶ月前` (months), `n年前` (years).
 
 ## Recorded data
 
