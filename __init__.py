@@ -101,9 +101,11 @@ def _load_counts() -> dict:
     path = _count_file()
     if path.exists():
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}
+        # 破損/改ざんでルートが dict でない場合に備えて保証する。
+        return data if isinstance(data, dict) else {}
     return {}
 
 
@@ -193,7 +195,7 @@ def _format_last_used_parts(iso: str, now=None) -> tuple[str, str]:
     try:
         dt = datetime.fromisoformat(iso)
     except (TypeError, ValueError):
-        return iso, ""
+        return str(iso), ""   # 保険: 非文字列でも表示処理が落ちないよう文字列化
     absolute = dt.strftime("%Y-%m-%d %H:%M:%S")
     if now is None:
         now = datetime.now().astimezone()
@@ -287,8 +289,10 @@ class ModelUsageCounter(io.ComfyNode):
             right_align = (True, False, True, False)  # 使用回数・経過を右揃え(他は左揃え)
             lines = []
             for mtype in sorted(data):
-                lines.append(f"[{mtype}]")
                 entries = data[mtype]
+                if not isinstance(entries, dict):   # 破損データ: 種別バケットが dict でない
+                    continue
+                lines.append(f"[{mtype}]")
 
                 # 最終使用日時(last_used)の降順で並べる。
                 #   - last_used は ISO 8601 文字列なので文字列比較で時系列順になる。
@@ -296,8 +300,11 @@ class ModelUsageCounter(io.ComfyNode):
                 #   - last_used が None / 旧int形式(dictでない)のレコードは降順ソートに
                 #     巻き込まず末尾へまとめる(末尾内はモデル名昇順)。
                 def _last_used(n):
+                    # last_used は文字列のときだけ有効扱い。非文字列(破損)は None として
+                    # 末尾グループへ送り、型混在によるソート時の比較エラーを防ぐ。
                     r = entries[n]
-                    return r.get("last_used") if isinstance(r, dict) else None
+                    v = r.get("last_used") if isinstance(r, dict) else None
+                    return v if isinstance(v, str) else None
 
                 dated = sorted(n for n in entries if _last_used(n))   # モデル名昇順
                 dated.sort(key=_last_used, reverse=True)              # last_used 降順(安定)
@@ -310,9 +317,9 @@ class ModelUsageCounter(io.ComfyNode):
                     if isinstance(rec, dict):
                         count = rec.get("count", 0)
                         lu = rec.get("last_used")
-                        if lu:
+                        if isinstance(lu, str) and lu:
                             updated, elapsed = _format_last_used_parts(lu)
-                        else:                          # last_used 欠落のフォールバック
+                        else:                          # last_used 欠落/非文字列のフォールバック
                             updated, elapsed = t["empty"], ""
                     else:                              # 旧int形式のフォールバック
                         count, updated, elapsed = rec, t["empty"], ""
