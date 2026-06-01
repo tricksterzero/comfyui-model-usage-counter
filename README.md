@@ -95,11 +95,13 @@ These loaders are currently counted:
 | `LoraLoaderModelOnly` (Load LoRA)   | lora         |
 | `LoraLoader\|pysssss` (Custom-Scripts) | lora      |
 | `Power Lora Loader (rgthree)`       | lora         |
+| `Lora Loader (LoraManager)`         | lora         |
 
-For the rgthree **Power Lora Loader**, only the LoRAs whose toggle is **on** are counted
-(each enabled slot is recorded separately). All LoRAs are grouped together under the `lora`
-bucket regardless of which loader they came from. To track other simple loaders, add a line
-to `LOADER_KEYS` in `__init__.py` (see "How it works" below).
+For loaders that bundle multiple LoRAs (rgthree **Power Lora Loader**, **Lora Loader
+(LoraManager)**), only the **enabled/active** entries are counted, each recorded separately.
+All LoRAs are grouped together under the `lora` bucket regardless of which loader they came
+from. To track other simple loaders, add a line to `LOADER_KEYS` in `__init__.py` (see "How
+it works" below).
 
 ## Limitations
 
@@ -140,11 +142,17 @@ is the `folder_paths` category used to verify the model exists: only names prese
 prompt can't bloat `model_usage.json`. Confirm the `class_type` and inputs key from the
 prompt metadata of an actual output PNG, and the folder name from the loader's `INPUT_TYPES`.
 
-Loaders that bundle multiple models in a non-trivial input structure — like the rgthree
-Power Lora Loader, whose `inputs` hold many `lora_N` entries of the form
-`{"on": bool, "lora": "name", "strength": float, ...}` — are handled by a dedicated branch
-in `extract_models()` (`_extract_power_loras`). Adding another such loader means writing a
-similar branch.
+Loaders that bundle multiple models in a non-trivial input structure are handled by
+dedicated branches in `extract_models()`:
+
+- rgthree **Power Lora Loader** — `inputs` hold many `lora_N` entries of the form
+  `{"on": bool, "lora": "name", "strength": float, ...}` (`_extract_power_loras`).
+- **Lora Loader (LoraManager)** — `inputs["loras"]` holds a list (`{"__value__": [...]}` or a
+  plain list) of `{"name", "active", "strength", ...}`; active entries are resolved to the
+  real `folder_paths` filename, since the stored name may omit the extension or subfolder
+  (`_extract_loramanager_loras` + `_resolve_lora_name`).
+
+Adding another such loader means writing a similar branch.
 
 </details>
 

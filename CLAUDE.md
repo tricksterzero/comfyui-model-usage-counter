@@ -54,19 +54,35 @@ LOADER_KEYS = {
 ### 特殊構造ローダー（複数モデルをまとめるタイプ）
 
 inputs がモデル名1個＝キー1個の単純形でないローダーは `LOADER_KEYS` では拾えない。
-`extract_models()` 内に専用分岐を足す。現状は rgthree **Power Lora Loader** に対応済み。
+`extract_models()` 内に専用分岐を足す。現状は rgthree **Power Lora Loader** と
+**Lora Loader (LoraManager)** に対応済み。
 
+**rgthree Power Lora Loader**（`_extract_power_loras`）:
 - class_type は `Power Lora Loader (rgthree)`（rgthree の `get_name()` が NAMESPACE を付ける）。
   inputs は `lora_1`, `lora_2`, ... のキーごとに
   `{"on": bool, "lora": "名前.safetensors", "strength": float, "strengthTwo": float(任意)}`。
-- 抽出は `_extract_power_loras()`。**キーが `lora_` で始まり `on` が真**の項目だけを
-  種別 `lora`（フォルダ `loras`）として記録。`model` / `clip` 等の接続キーは無視する。
+- **キーが `lora_` で始まり `on` が真**の項目だけを種別 `lora`（フォルダ `loras`）として記録。
+  `model` / `clip` 等の接続キーは無視する。
 - **`on` のみで判定**し strength=0 は除外しない（rgthree 自身の
   `get_enabled_loras_from_prompt_node` も `on` のみを見るため、それに合わせた）。
-- 他ローダーと同様 `folder_paths.get_filename_list("loras")` との**完全一致のみ記録**
-  （肥大化防止）。rgthree はファジーマッチもするが、UI はファイル一覧から選んで widget に
-  格納するため prompt 値は通常 canonical 名と一致する。一致しなければ記録しない（安全側）。
-- 別の同種ローダーを足す場合はこれに倣った分岐を新設する。
+- `folder_paths.get_filename_list("loras")` との**完全一致のみ記録**（肥大化防止）。rgthree は
+  ファジーマッチもするが、UI はファイル一覧から選んで widget に格納するため prompt 値は通常
+  canonical 名と一致する。一致しなければ記録しない（安全側）。
+
+**Lora Loader (LoraManager)**（`_extract_loramanager_loras`）:
+- class_type は `Lora Loader (LoraManager)`（Lora-Manager の `NODE_CLASS_MAPPINGS` がクラスの
+  `NAME` を使う）。`inputs["loras"]` は新形式 `{"__value__": [..]}` か旧形式 `[..]`。各要素は
+  `{"name": str, "active": bool, "strength": float, "clipStrength": float, "_isDummy": bool}`。
+- **`active`（既定 True）かつ `_isDummy` でない**項目を記録（Lora-Manager 自身の
+  `node_extractors.py` の判定に合わせた）。
+- **重要**: 格納される `name` は**拡張子なし・フォルダなしの基底名**（例 `"demo"` → 実体
+  `demo.safetensors`。legacy 表記）。よって**単純な完全一致では何も記録されない**。
+  `_resolve_lora_name()` で「完全一致→拡張子なしパス一致→拡張子なし basename 一致」の順に
+  folder_paths 上の実在 canonical 名へ解決し、その canonical 名で記録する。これにより実在チェック
+  （肥大化防止）を保ちつつ、他ローダーと同じ canonical キーに集約される。
+
+- 別の同種ローダーを足す場合はこれらに倣った分岐を新設する。name の格納形式は拡張に依存するため
+  （rgthree は canonical、Lora-Manager は拡張子なし）、実機 prompt かテスト/抽出コードで要確認。
 
 ## 実装上の注意（落とし穴）
 
@@ -87,9 +103,9 @@ inputs がモデル名1個＝キー1個の単純形でないローダーは `LOA
 ## 未対応 / 既知の制限
 
 - **LoRA カウント対応済み**: 標準 `LoraLoader` / `LoraLoaderModelOnly`、pythongosssss
-  `LoraLoader|pysssss`（いずれも inputs キー `lora_name`、`LOADER_KEYS` で対応）と
-  rgthree Power Lora Loader（専用分岐、上記「特殊構造ローダー」参照）。すべて `lora` 種別に
-  集約する。これら以外の集約型 LoRA ローダーは未対応で、必要なら個別分岐を追加する。
+  `LoraLoader|pysssss`（いずれも inputs キー `lora_name`、`LOADER_KEYS` で対応）、rgthree
+  Power Lora Loader、Lora Loader (LoraManager)（後2者は専用分岐、上記「特殊構造ローダー」参照）。
+  すべて `lora` 種別に集約する。これら以外の集約型 LoRA ローダーは未対応で、必要なら個別分岐を追加する。
   メジャーな LoRA ローダーへ段階的に対応を広げる方針（1つずつ）。次の候補は KJNodes /
   Easy-Use / efficiency-nodes 等（スター多数。構造未確認のものは要裏取り）。
 - `pyproject.toml` に未設定のプレースホルダが残存（公開前に要設定）:

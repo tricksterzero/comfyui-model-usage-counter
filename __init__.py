@@ -70,6 +70,16 @@ LORA_TYPE = "lora"        # 集計上の種別ラベル
 LORA_FOLDER = "loras"     # folder_paths 上の実在チェック用フォルダ名
 
 # ----------------------------------------------------------------------------
+# ComfyUI-Lora-Manager の "Lora Loader (LoraManager)"(class_type は NODE_CLASS_MAPPINGS が
+# クラスの NAME を使うため、この表示名がそのまま class_type になる)。
+#   inputs["loras"] は新形式 {"__value__": [..]} か旧形式 [..]。各要素は
+#   {"name": str, "active": bool, "strength": float, "clipStrength": float, "_isDummy": bool}。
+#   active(既定 True)かつ _isDummy でないものを記録する(Lora-Manager 自身の抽出判定と同じ)。
+#   name は拡張子なし/サブフォルダ表記の揺れがあるため、実在名へ解決してから記録する。
+# ----------------------------------------------------------------------------
+LORAMANAGER_LOADER = "Lora Loader (LoraManager)"
+
+# ----------------------------------------------------------------------------
 # ノード表示に使う文言。将来の多言語化に備えてここに集約し、ロジック中に
 # 日本語を直接ハードコードしない。相対表記の {n} は経過数値で置換する。
 # ----------------------------------------------------------------------------
@@ -200,6 +210,79 @@ def _extract_power_loras(node: dict, valid_cache: dict) -> list[tuple[str, str]]
     return out
 
 
+def _resolve_lora_name(name, valid, valid_cache):
+    """LoRA 名(拡張子なし/サブフォルダ表記の揺れ)を folder_paths 上の実在 canonical 名へ解決する。
+
+    優先順: 完全一致 → 拡張子なしパス一致 → 拡張子なし basename 一致。解決不能なら None。
+    valid=None(folder_paths 利用不可で検証スキップ)のときは機能優先で name をそのまま返す。
+    複数 LoRA が同じ basename を持つ場合は最初に見つかった canonical を採用する(稀)。
+    """
+    if not (isinstance(name, str) and name):
+        return None
+    if valid is None:
+        return name
+    if name in valid:
+        return name
+    # 実在名の索引(拡張子なしパス→canonical / 拡張子なしbasename→canonical)を1回だけ構築しキャッシュ。
+    idx_key = "\x00loraidx"
+    index = valid_cache.get(idx_key)
+    if index is None:
+        by_noext, by_base = {}, {}
+        for c in valid:
+            cn = c.replace("\\", "/")
+            head, _, base = cn.rpartition("/")
+            base_noext = base.rsplit(".", 1)[0] if "." in base else base
+            noext = (head + "/" + base_noext) if head else base_noext
+            by_noext.setdefault(noext, c)
+            by_base.setdefault(base_noext, c)
+        index = (by_noext, by_base)
+        valid_cache[idx_key] = index
+    by_noext, by_base = index
+    s = name.replace("\\", "/")
+    head, _, base = s.rpartition("/")
+    base_noext = base.rsplit(".", 1)[0] if "." in base else base
+    s_noext = (head + "/" + base_noext) if head else base_noext
+    if s_noext in by_noext:
+        return by_noext[s_noext]
+    if base_noext in by_base:
+        return by_base[base_noext]
+    return None
+
+
+def _extract_loramanager_loras(node: dict, valid_cache: dict) -> list[tuple[str, str]]:
+    """ComfyUI-Lora-Manager "Lora Loader (LoraManager)" から有効なLoRA名を抽出する。
+
+    inputs["loras"] は新形式 {"__value__": [..]} または旧形式 [..]。各要素のうち
+    active(既定 True)かつ _isDummy でないものを、実在 canonical 名へ解決して記録する。
+    """
+    out = []
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        return out
+    loras_data = inputs.get("loras")
+    if isinstance(loras_data, dict):
+        loras_list = loras_data.get("__value__", [])
+    elif isinstance(loras_data, list):
+        loras_list = loras_data
+    else:
+        loras_list = []
+    if not isinstance(loras_list, list):
+        return out
+    valid = _valid_names(LORA_FOLDER, valid_cache)
+    for lora in loras_list:
+        if not isinstance(lora, dict):
+            continue
+        if not lora.get("active", True):     # active 既定 True(Lora-Manager の判定に合わせる)
+            continue
+        if lora.get("_isDummy", False):      # プレースホルダ行は除外
+            continue
+        cano = _resolve_lora_name(lora.get("name"), valid, valid_cache)
+        if cano is None:
+            continue  # 実在しないLoRA名は記録しない(任意文字列による肥大化防止)
+        out.append((LORA_TYPE, cano))
+    return out
+
+
 def extract_models(prompt: dict) -> list[tuple[str, str]]:
     """prompt(API形式 dict)を走査し、(種別, モデル名) のリストを返す。
 
@@ -222,6 +305,10 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
         # rgthree Power Lora Loader は複数LoRAを内部にまとめる特殊形式。専用分岐で拾う。
         if ct == POWER_LORA_LOADER:
             found.extend(_extract_power_loras(node, valid_cache))
+            continue
+        # ComfyUI-Lora-Manager の Lora Loader も複数LoRAを inputs["loras"] にまとめる集約型。
+        if ct == LORAMANAGER_LOADER:
+            found.extend(_extract_loramanager_loras(node, valid_cache))
             continue
         spec = LOADER_KEYS.get(ct)
         if spec is None:
