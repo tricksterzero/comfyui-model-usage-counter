@@ -2,33 +2,55 @@
 
 English | [日本語](./README.ja.md)
 
-A minimal ComfyUI custom node that records **how many times each model is used** and **when it was last used**, updating on every generation.
+A ComfyUI custom node that automatically records **how many times each model is used**
+and **when it was last used**. Just drop it on your graph and the counts grow with every
+generation.
 
-Built on the ComfyUI **V3 node schema**.
+Handy for answering questions like "which checkpoint have I been using lately?" or
+"which models am I no longer using?"
 
-## How it works
+## Features
 
-Drop the **Model Usage Counter** node anywhere on your graph — it needs no input connections. On every run it:
+- **Just drop it in** — place one node on your graph; no wiring (input connections) needed.
+- **Automatic counting** — records the models actually used on every generation.
+- **Per-type totals** — counts checkpoints and diffusion models (unet) separately.
+- **Last-used timestamp** — see when each model was last used.
+- **Shown on the node** — the current totals are displayed on the node after each generation.
+- **Saved as JSON** — data is written to `model_usage.json` for use by other tools.
+- **No extra dependencies** — standard library only.
 
-1. Reads the full prompt graph (via the hidden `prompt` input that output nodes receive automatically).
-2. Finds the loader nodes that were actually used and extracts their model names.
-3. Increments a per-model counter and records the last-used timestamp, then writes them to `model_usage.json`.
-4. Displays the current totals on the node.
+## Installation
 
-Because it has no outputs, it never triggers recomputation of downstream nodes (KSampler, etc.). A `fingerprint_inputs()` returning the current time forces the node to run on every generation, so counts increment even when the same model is reused.
+Clone into your `custom_nodes` directory and restart ComfyUI:
 
-### Tracked loaders
+```
+cd ComfyUI/custom_nodes
+git clone https://github.com/tricksterzero/comfyui-model-usage-counter
+```
 
-| `class_type`            | model name key | bucket      |
-| ----------------------- | -------------- | ----------- |
-| `CheckpointLoaderSimple`| `ckpt_name`    | checkpoint  |
-| `UNETLoader`            | `unet_name`    | unet        |
+Or install via ComfyUI-Manager ("Install via Git URL").
 
-To track more loader types, add a line to `LOADER_KEYS` in `__init__.py`.
+## Usage
 
-## Output format
+1. Add **Model Usage Counter** from the **utils/stats** category (node search or menu).
+2. Place it anywhere on your graph (it doesn't need to be connected to anything).
+3. Generate as usual (Queue Prompt).
+4. The models you used are written to `model_usage.json`, and the current totals are shown on the node.
 
-`model_usage.json` (stored in the ComfyUI user/output directory, **not** inside this repo):
+The node displays something like this (it appears after one generation):
+
+```
+[checkpoint]
+     12  2026-06-01T14:30:00+09:00  someCheckpoint.safetensors
+[unet]
+     30  2026-06-01T15:02:11+09:00  someDiffusionModel.safetensors
+```
+
+## Recorded data
+
+Data is saved to `model_usage.json`. It lives in a `model-usage-counter/` folder inside
+ComfyUI's user / output directory — **not** inside this repository — so it survives updates
+and reinstalls.
 
 ```json
 {
@@ -41,30 +63,65 @@ To track more loader types, add a line to `LOADER_KEYS` in `__init__.py`.
 }
 ```
 
-`last_used` is an ISO 8601 timestamp in local time (with UTC offset).
+- `count` … number of times the model was used
+- `last_used` … when it was last used (local time, ISO 8601 with UTC offset)
 
-## Installation
+## Tracked models
 
-Clone into your `custom_nodes` directory and restart ComfyUI:
+These loaders are currently counted:
 
-```
-cd ComfyUI/custom_nodes
-git clone https://github.com/<your-username>/comfyui-model-usage-counter
-```
+| Loader                   | bucket       |
+| ------------------------ | ------------ |
+| `CheckpointLoaderSimple` | checkpoint   |
+| `UNETLoader`             | unet         |
 
-Or install via ComfyUI-Manager ("Install via Git URL").
+To track other loaders, add a line to `LOADER_KEYS` in `__init__.py`
+(see "How it works" below).
+
+## Limitations
+
+- **LoRA is not supported.** Loaders that bundle multiple LoRAs (e.g. rgthree Power Lora
+  Loader) need dedicated handling.
+- **With `batch_count > 1`**, the count increases by the number of images generated
+  (usage is counted per image, not per workflow run).
+- Placing **multiple Model Usage Counter nodes** in one graph still counts **only once**
+  (totals are never inflated by node count).
+- Duplicate loaders within a single graph are each counted, reflecting actual usage.
+
+## How it works
+
+<details>
+<summary>Technical details (click to expand)</summary>
+
+Built on ComfyUI's **V3 node schema** (`comfy_api.latest`).
+
+This is an output node with no output ports. On every generation it:
+
+1. Reads the full prompt graph (via the hidden `prompt` input that output nodes receive
+   automatically).
+2. Finds the loader nodes that were actually used and extracts their model names.
+3. Increments a per-model counter, records the last-used timestamp, and writes them to
+   `model_usage.json`.
+4. Returns the totals as text, which the bundled JS extension renders on the node.
+
+Because it has no outputs, it never triggers recomputation of downstream nodes (KSampler,
+etc.). A `fingerprint_inputs()` returning the current time forces the node to run on every
+generation, so counts increment even when the same model is reused.
+
+The on-node display works by returning `ui.PreviewText` from `execute()` (delivered as
+`message.text` in the `executed` event) and rendering it into a read-only multiline widget
+via the bundled JS extension (`js/model_usage_counter.js`, served through `WEB_DIRECTORY`).
+
+Tracked loaders are defined in `LOADER_KEYS` in `__init__.py`. Add a line in the form
+`class_type -> (model name key, bucket)` to track more. Confirm the exact `class_type` and
+inputs key for a new loader from the prompt metadata of an actual output PNG.
+
+</details>
 
 ## Requirements
 
 - A ComfyUI version that supports the V3 node schema (`comfy_api.latest`).
 - No extra Python dependencies (standard library only).
-
-## Notes / limitations
-
-- LoRA counting is not implemented. The structure is ready for it; loaders that bundle multiple LoRAs (e.g. rgthree Power Lora Loader) need dedicated parsing in `extract_models()`.
-- With `batch_count > 1`, the count increases by the number of images generated (usage is counted per image, not per workflow run).
-- If multiple Model Usage Counter nodes are placed in one graph, counting is performed only once (by the node with the smallest node id), so totals are never inflated by node count.
-- Duplicate loaders within a single graph are each counted, reflecting actual usage.
 
 ## License
 

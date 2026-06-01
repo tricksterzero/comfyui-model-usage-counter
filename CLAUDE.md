@@ -1,0 +1,79 @@
+# CLAUDE.md
+
+ComfyUI の V3 ノードスキーマで作られたモデル使用回数カウンタ。将来のセッションで
+この README 的把握を毎回やり直さずに済むよう、設計意図・拡張手順・落とし穴をまとめる。
+
+## プロジェクト概要
+
+- ComfyUI V3 スキーマ（`comfy_api.latest`）のカスタムノード `ModelUsageCounter`。
+- 生成のたびにグラフ内ローダーが使用したモデル名を抽出し、**使用回数**と
+  **最終使用日時**を `model_usage.json` に記録する。
+- グラフ上に置くだけで動作（入力接続不要）。
+
+## アーキテクチャ（なぜこの設計か）
+
+- Python 実装は **`__init__.py` 単一ファイル**に集約。依存は Python 標準ライブラリのみ
+  （＋ ComfyUI の `comfy_api.latest` / `folder_paths`）。
+- **ノード上表示は JS 拡張で行う**（`js/model_usage_counter.js`、`WEB_DIRECTORY="./js"` で配信）。
+  バックエンドは `execute()` で `ui.PreviewText(text)` を返し、生成完了時の `"executed"`
+  イベントで `message.text` を送る。JS 側はそれを読み取り専用の複数行ウィジェットに描画する。
+  コア側の text 表示はフロントのバージョン依存で不確実なため、自前ウィジェットで確実に表示する。
+  対象は `nodeData.name === "MUC_ModelUsageCounter"` で判定（= `ModelUsageCounter.NODE_ID`）。
+- **末端ノードとして毎回確実に実行させる仕組み**:
+  - `is_output_node=True`（末端ノード化）
+  - `not_idempotent=True`（キャッシュ出力を再利用しない）
+  - `fingerprint_inputs()` が `time.time()` を返す（毎回ユニーク値でキャッシュ無効化）。
+    → 同じモデルで連続生成してもカウントが必ず増える。
+- **`outputs=[]` は重要**: 出力が無いため下流ノード（KSampler 等）の再計算を誘発しない。
+  この性質を壊さないこと（出力を足すと毎生成で下流が再計算される）。
+- **prompt 走査方式**: hidden の `prompt`（グラフ全体の API 形式 dict）を
+  `extract_models()` で走査してモデル名を取得する。ローダー側に出力ポートを足す必要がなく、
+  実際に使われたモデルと記録が必ず一致する。
+- `fingerprint_inputs()` の戻り値は **JSON シリアライズ可能**でなければならない
+  （メタデータ書き出しで失敗するため float を返している）。
+
+## 対象ローダーの拡張手順
+
+`__init__.py` の `LOADER_KEYS` に `class_type -> (inputsキー, 種別ラベル)` を1行足すだけ。
+
+```python
+LOADER_KEYS = {
+    "CheckpointLoaderSimple": ("ckpt_name", "checkpoint"),
+    "UNETLoader":             ("unet_name", "unet"),
+    # 例) "UnetLoaderGGUF":   ("unet_name", "unet"),
+}
+```
+
+- 追加するローダーの `class_type` 名と inputs キーは拡張実装に依存する。
+  実機の出力 PNG メタデータ（prompt）で実際の値を一度確認してから追加すること。
+
+## 実装上の注意（落とし穴）
+
+- **多重加算対策**: 同一グラフに複数のカウンタを置くと各ノードがグラフ全体を走査するため、
+  対策しないと設置個数分だけ多重加算される。`execute()` の `is_primary` 判定により
+  **最小 node_id を持つ1つだけ**が加算する。表示（PreviewText）は全ノードで行ってよい。
+  この判定ロジックを壊さないこと。
+- **保存先はリポジトリ外**: `user` → `output` ディレクトリの順で探し
+  （`folder_paths.get_user_directory` / `get_output_directory`）、
+  `model-usage-counter/model_usage.json` に保存する。利用者の git pull / 再インストールで
+  データが消えたりリポジトリを汚したりしないための方針。維持すること。
+- **データ形式**: `{"count": int, "last_used": isoformat}`。旧形式（int 値）も読めるよう
+  後方互換の読み出しを保持している（`isinstance(rec, dict)` 分岐）。崩さないこと。
+- **batch 仕様**: `batch_count > 1` のときは画像枚数分カウントされる（ワークフロー実行単位ではない）。
+
+## 未対応 / 既知の制限
+
+- **LoRA カウント未実装**。rgthree Power Lora Loader 等は inputs 構造が特殊（複数 LoRA を内部に
+  まとめる）で単純なキー抽出では拾えない。対応するなら `extract_models()` に専用分岐を追加する。
+- `pyproject.toml` に未設定のプレースホルダが残存（公開前に要設定）:
+  - `PublisherId = "<your-publisher-id>"`
+  - `requires-comfyui`（コメントアウト。動作確認した下限バージョンを設定する）
+
+## ドキュメント運用
+
+- 機能を変更したら `README.md`（英語）と `README.ja.md`（日本語）の**両方**を更新する。
+  両ファイルは構成・内容を揃える。
+- **README は利用者（エンドユーザー）向けに書く**。冒頭は「何ができるか・どう使うか」を中心にし、
+  内部実装の解説（V3 スキーマ、`fingerprint_inputs`、`prompt` 走査、`LOADER_KEYS` 拡張 等の
+  技術詳細）は末尾の「仕組み」セクションに `<details>` で折りたたんでまとめる。
+- コメント・ドキュメント・コミットメッセージは日本語で記述する。
