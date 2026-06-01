@@ -13,6 +13,7 @@
 import time
 import json
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from comfy_api.latest import ComfyExtension, io, ui
@@ -156,11 +157,18 @@ class ModelUsageCounter(io.ComfyNode):
 
         if is_primary:
             models = extract_models(prompt)
+            now = datetime.now().astimezone().isoformat(timespec="seconds")
             with _lock:
                 data = _load_counts()
                 for mtype, name in models:
                     bucket = data.setdefault(mtype, {})
-                    bucket[name] = bucket.get(name, 0) + 1
+                    rec = bucket.get(name)
+                    # 値が旧形式(int)や想定外の場合は新形式レコードを作り直す。
+                    if not isinstance(rec, dict):
+                        rec = {"count": 0, "last_used": None}
+                    rec["count"] = rec.get("count", 0) + 1
+                    rec["last_used"] = now
+                    bucket[name] = rec
                 _save_counts(data)
         else:
             data = _load_counts()  # 表示用に読むだけ(加算しない)
@@ -170,8 +178,19 @@ class ModelUsageCounter(io.ComfyNode):
             lines = []
             for mtype in sorted(data):
                 lines.append(f"[{mtype}]")
-                for name in sorted(data[mtype], key=lambda n: -data[mtype][n]):
-                    lines.append(f"  {data[mtype][name]:>5}  {name}")
+                entries = data[mtype]
+
+                def _count_of(n):
+                    r = entries[n]
+                    return r.get("count", 0) if isinstance(r, dict) else r
+
+                for name in sorted(entries, key=lambda n: -_count_of(n)):
+                    rec = entries[name]
+                    if isinstance(rec, dict):
+                        last = rec.get("last_used") or "-"
+                        lines.append(f"  {rec.get('count', 0):>5}  {last}  {name}")
+                    else:
+                        lines.append(f"  {rec:>5}  {'-':<25}  {name}")
             text = "\n".join(lines)
         else:
             text = "(対象ローダーが見つかりませんでした)"
