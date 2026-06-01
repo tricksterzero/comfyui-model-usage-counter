@@ -2,7 +2,7 @@
 
 English | [日本語](./README.ja.md)
 
-A minimal ComfyUI custom node that records **how many times each model is used**, incrementing the count on every generation.
+A minimal ComfyUI custom node that records **how many times each model is used** and **when it was last used**, updating on every generation.
 
 Built on the ComfyUI **V3 node schema**.
 
@@ -12,7 +12,7 @@ Drop the **Model Usage Counter** node anywhere on your graph — it needs no inp
 
 1. Reads the full prompt graph (via the hidden `prompt` input that output nodes receive automatically).
 2. Finds the loader nodes that were actually used and extracts their model names.
-3. Increments a per-model counter and writes it to `model_usage.json`.
+3. Increments a per-model counter and records the last-used timestamp, then writes them to `model_usage.json`.
 4. Displays the current totals on the node.
 
 Because it has no outputs, it never triggers recomputation of downstream nodes (KSampler, etc.). A `fingerprint_inputs()` returning the current time forces the node to run on every generation, so counts increment even when the same model is reused.
@@ -32,10 +32,16 @@ To track more loader types, add a line to `LOADER_KEYS` in `__init__.py`.
 
 ```json
 {
-  "checkpoint": { "someCheckpoint.safetensors": 12 },
-  "unet": { "someDiffusionModel.safetensors": 30 }
+  "checkpoint": {
+    "someCheckpoint.safetensors": { "count": 12, "last_used": "2026-06-01T14:30:00+09:00" }
+  },
+  "unet": {
+    "someDiffusionModel.safetensors": { "count": 30, "last_used": "2026-06-01T15:02:11+09:00" }
+  }
 }
 ```
+
+`last_used` is an ISO 8601 timestamp in local time (with UTC offset).
 
 ## Installation
 
@@ -43,7 +49,7 @@ Clone into your `custom_nodes` directory and restart ComfyUI:
 
 ```
 cd ComfyUI/custom_nodes
-git clone https://github.com/tricksterzero/comfyui-model-usage-counter
+git clone https://github.com/<your-username>/comfyui-model-usage-counter
 ```
 
 Or install via ComfyUI-Manager ("Install via Git URL").
@@ -56,8 +62,9 @@ Or install via ComfyUI-Manager ("Install via Git URL").
 ## Notes / limitations
 
 - LoRA counting is not implemented. The structure is ready for it; loaders that bundle multiple LoRAs (e.g. rgthree Power Lora Loader) need dedicated parsing in `extract_models()`.
-- Behavior with `batch_count > 1` (whether each iteration increments the count) is unverified — please test on your setup.
-- Duplicate loaders in one graph are each counted, reflecting actual usage.
+- With `batch_count > 1`, the count increases by the number of images generated (usage is counted per image, not per workflow run).
+- If multiple Model Usage Counter nodes are placed in one graph, counting is performed only once (by the node with the smallest node id), so totals are never inflated by node count.
+- Duplicate loaders within a single graph are each counted, reflecting actual usage.
 
 ## License
 

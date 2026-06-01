@@ -2,7 +2,7 @@
 
 [English](./README.md) | 日本語
 
-生成のたびに **各モデルの使用回数を記録・加算する** ミニマルな ComfyUI カスタムノードです。ComfyUI の **V3 ノードスキーマ**で実装しています。
+生成のたびに **各モデルの使用回数** と **最終使用日時** を記録・更新するミニマルな ComfyUI カスタムノードです。ComfyUI の **V3 ノードスキーマ**で実装しています。
 
 ## 動作の仕組み
 
@@ -10,7 +10,7 @@
 
 1. グラフ全体のプロンプトを読み取る(出力ノードが自動的に受け取る隠し入力 `prompt` を利用)
 2. 実際に使われたローダーノードを見つけ、モデル名を抽出する
-3. モデルごとのカウンタを加算し、`model_usage.json` に書き込む
+3. モデルごとのカウンタを加算し、最終使用日時を記録して `model_usage.json` に書き込む
 4. 現在の集計をノード上に表示する
 
 出力ポートを持たないため、下流ノード(KSampler など)の再計算を引き起こしません。`fingerprint_inputs()` が現在時刻を返すことでノードは毎回実行され、同じモデルを使い回しても確実にカウントが加算されます。
@@ -30,10 +30,16 @@
 
 ```json
 {
-  "checkpoint": { "someCheckpoint.safetensors": 12 },
-  "unet": { "someDiffusionModel.safetensors": 30 }
+  "checkpoint": {
+    "someCheckpoint.safetensors": { "count": 12, "last_used": "2026-06-01T14:30:00+09:00" }
+  },
+  "unet": {
+    "someDiffusionModel.safetensors": { "count": 30, "last_used": "2026-06-01T15:02:11+09:00" }
+  }
 }
 ```
+
+`last_used` はローカル時刻(UTCオフセット付き)の ISO 8601 形式です。
 
 ## インストール
 
@@ -54,7 +60,8 @@ git clone https://github.com/<your-username>/comfyui-model-usage-counter
 ## 備考・制限事項
 
 - LoRA のカウントは未実装です。構造上は追加可能ですが、複数の LoRA をまとめて扱うローダー(例: rgthree Power Lora Loader)は `extract_models()` に専用の解析を足す必要があります。
-- `batch_count > 1` のときの挙動(各反復でカウントが加算されるか)は未検証です。各自の環境で確認してください。
+- `batch_count > 1` のときは、生成枚数の分だけカウントが増えます(ワークフローの実行回数ではなく、画像1枚ごとに数えます)。
+- 1つのグラフ内に Model Usage Counter を複数置いた場合でも、加算は1回だけ行われます(最小の node id を持つノードが代表して記録するため、設置個数で多重加算されません)。
 - 1つのグラフ内に同じローダーが複数ある場合はそれぞれ数えられ、実際の使用状況を反映します。
 
 ## ライセンス
