@@ -10,8 +10,10 @@
 #   - cls.hidden.prompt(グラフ全体のAPI形式dict)を自分で走査してモデル名を取得するため、
 #     ローダー側に出力ポートを足す必要がない。実際に使われたモデルと記録が必ず一致する。
 
+import os
 import time
 import json
+import tempfile
 import threading
 import unicodedata
 from datetime import datetime
@@ -110,10 +112,25 @@ def _load_counts() -> dict:
 
 
 def _save_counts(data: dict) -> None:
-    _count_file().write_text(
-        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    path = _count_file()
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+    # 同一ディレクトリに一時ファイルを書いてから os.replace で原子的に差し替える。
+    #   - write_text は truncate→write のため、書き込み中にプロセスが落ちると本体が
+    #     途中切れ/破損する。一時ファイル+置換なら本体は常に「旧」か「新」の完全な状態。
+    #   - os.replace は同一ファイルシステム上で原子的(Windows/POSIX とも既存を置換)。
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".model_usage-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())   # 置換前にディスクへ確実に書き出す
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)         # 失敗時は一時ファイルを残さない
+        except OSError:
+            pass
+        raise
 
 
 def _valid_names(folder: str, cache: dict):
