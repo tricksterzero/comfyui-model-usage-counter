@@ -89,16 +89,17 @@ user ディレクトリ内の `model-usage-counter/` フォルダに保存され
 | ----------------------------------- | ------------ |
 | `CheckpointLoaderSimple`            | checkpoint   |
 | `UNETLoader`                        | unet         |
+| `LoraLoader`（Load LoRA）           | lora         |
+| `LoraLoaderModelOnly`（Load LoRA）  | lora         |
 | `Power Lora Loader (rgthree)`       | lora         |
 
 rgthree **Power Lora Loader** では、トグルが **ON** の LoRA だけを数えます
-（有効なスロットそれぞれを個別に記録します）。ほかの単純なローダーに対応させたい場合は、
+（有効なスロットそれぞれを個別に記録します）。どのローダー由来でも、LoRA はすべて `lora`
+種別にまとめて集計します。ほかの単純なローダーに対応させたい場合は、
 `__init__.py` の `LOADER_KEYS` に1行追加します（詳しくは下記「仕組み」を参照）。
 
 ## 制限事項
 
-- **LoRA は rgthree Power Lora Loader のみ対応** です。それ以外の LoRA ローダーはまだ
-  数えません（個別対応が必要です。下記「仕組み」を参照）。
 - **`batch_count > 1` のとき**は、生成枚数の分だけカウントが増えます（ワークフローの実行回数ではなく、
   画像1枚ごとに数えます）。
 - 1つのグラフに Model Usage Counter を**複数置いても、加算は1回だけ**です（設置個数で

@@ -91,16 +91,17 @@ These loaders are currently counted:
 | ----------------------------------- | ------------ |
 | `CheckpointLoaderSimple`            | checkpoint   |
 | `UNETLoader`                        | unet         |
+| `LoraLoader` (Load LoRA)            | lora         |
+| `LoraLoaderModelOnly` (Load LoRA)   | lora         |
 | `Power Lora Loader (rgthree)`       | lora         |
 
 For the rgthree **Power Lora Loader**, only the LoRAs whose toggle is **on** are counted
-(each enabled slot is recorded separately). To track other simple loaders, add a line to
-`LOADER_KEYS` in `__init__.py` (see "How it works" below).
+(each enabled slot is recorded separately). All LoRAs are grouped together under the `lora`
+bucket regardless of which loader they came from. To track other simple loaders, add a line
+to `LOADER_KEYS` in `__init__.py` (see "How it works" below).
 
 ## Limitations
 
-- **Only the rgthree Power Lora Loader is supported for LoRAs.** Other LoRA loaders aren't
-  counted yet (they need dedicated handling — see "How it works").
 - **With `batch_count > 1`**, the count increases by the number of images generated
   (usage is counted per image, not per workflow run).
 - Placing **multiple Model Usage Counter nodes** in one graph still counts **only once**

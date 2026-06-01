@@ -86,10 +86,10 @@ inputs がモデル名1個＝キー1個の単純形でないローダーは `LOA
 
 ## 未対応 / 既知の制限
 
-- **LoRA カウントは rgthree Power Lora Loader のみ対応**（上記「特殊構造ローダー」参照）。
-  それ以外の LoRA ローダー（標準 `LoraLoader` 等）は未対応。標準 LoraLoader は inputs が
-  単純（`lora_name` キー）なので `LOADER_KEYS` に1行足せば対応できるはず（class_type と
-  キーは実機の prompt で要確認）。他の集約型ローダーは個別分岐を追加する。
+- **LoRA カウント対応済み**: 標準 `LoraLoader` / `LoraLoaderModelOnly`（どちらも inputs キー
+  `lora_name`、`LOADER_KEYS` で対応）と rgthree Power Lora Loader（専用分岐、上記「特殊構造
+  ローダー」参照）。すべて `lora` 種別に集約する。これら以外の集約型 LoRA ローダーは未対応で、
+  必要なら個別分岐を追加する。
 - `pyproject.toml` に未設定のプレースホルダが残存（公開前に要設定）:
   - `PublisherId = "<your-publisher-id>"`
   - `requires-comfyui`（コメントアウト。動作確認した下限バージョンを設定する）

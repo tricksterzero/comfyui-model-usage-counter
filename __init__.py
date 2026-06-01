@@ -46,6 +46,12 @@ except ImportError:
 LOADER_KEYS = {
     "CheckpointLoaderSimple": ("ckpt_name", "checkpoint", "checkpoints"),
     "UNETLoader":             ("unet_name", "unet", "diffusion_models"),
+    # 標準 LoRA ローダー(ComfyUI 本体)。どちらも inputs キーは "lora_name"。
+    #   LoraLoader          = "Load LoRA (Model and CLIP)"
+    #   LoraLoaderModelOnly = "Load LoRA"(LoraLoader を継承、clip なし)
+    # rgthree Power Lora Loader と同じ "lora" 種別に集約する。
+    "LoraLoader":             ("lora_name", "lora", "loras"),
+    "LoraLoaderModelOnly":    ("lora_name", "lora", "loras"),
 }
 
 # ----------------------------------------------------------------------------
