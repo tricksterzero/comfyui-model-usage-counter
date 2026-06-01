@@ -13,7 +13,7 @@ Handy for answering questions like "which checkpoint have I been using lately?" 
 
 - **Just drop it in** — place one node on your graph; no wiring (input connections) needed.
 - **Automatic counting** — records the models actually used on every generation.
-- **Per-type totals** — counts checkpoints and diffusion models (unet) separately.
+- **Per-type totals** — counts checkpoints, diffusion models (unet), and LoRAs separately.
 - **Last-used timestamp** — see when each model was last used.
 - **Shown on the node** — the current totals are displayed on the node after each generation.
 - **Saved as JSON** — data is written to `model_usage.json` for use by other tools.
@@ -44,6 +44,10 @@ The node displays something like this (it appears after one generation):
   使用回数  最終使用日時             経過  モデル名
         12  2026-06-01 17:30:00  たった今  someCheckpoint.safetensors
          4  2026-05-30 09:10:00     2日前  olderCheckpoint.safetensors
+[lora]
+  使用回数  最終使用日時            経過  モデル名
+        18  2026-06-01 17:29:30  たった今  detailTweaker.safetensors
+         5  2026-05-28 11:00:00     4日前  char/someCharacter.safetensors
 [unet]
   使用回数  最終使用日時            経過  モデル名
         30  2026-06-01 15:18:42  2時間前  someDiffusionModel.safetensors
@@ -69,6 +73,9 @@ reinstalls. (The output directory is deliberately avoided since it can be served
   },
   "unet": {
     "someDiffusionModel.safetensors": { "count": 30, "last_used": "2026-06-01T15:02:11+09:00" }
+  },
+  "lora": {
+    "detailTweaker.safetensors": { "count": 18, "last_used": "2026-06-01T17:29:30+09:00" }
   }
 }
 ```
@@ -80,18 +87,20 @@ reinstalls. (The output directory is deliberately avoided since it can be served
 
 These loaders are currently counted:
 
-| Loader                   | bucket       |
-| ------------------------ | ------------ |
-| `CheckpointLoaderSimple` | checkpoint   |
-| `UNETLoader`             | unet         |
+| Loader                              | bucket       |
+| ----------------------------------- | ------------ |
+| `CheckpointLoaderSimple`            | checkpoint   |
+| `UNETLoader`                        | unet         |
+| `Power Lora Loader (rgthree)`       | lora         |
 
-To track other loaders, add a line to `LOADER_KEYS` in `__init__.py`
-(see "How it works" below).
+For the rgthree **Power Lora Loader**, only the LoRAs whose toggle is **on** are counted
+(each enabled slot is recorded separately). To track other simple loaders, add a line to
+`LOADER_KEYS` in `__init__.py` (see "How it works" below).
 
 ## Limitations
 
-- **LoRA is not supported.** Loaders that bundle multiple LoRAs (e.g. rgthree Power Lora
-  Loader) need dedicated handling.
+- **Only the rgthree Power Lora Loader is supported for LoRAs.** Other LoRA loaders aren't
+  counted yet (they need dedicated handling — see "How it works").
 - **With `batch_count > 1`**, the count increases by the number of images generated
   (usage is counted per image, not per workflow run).
 - Placing **multiple Model Usage Counter nodes** in one graph still counts **only once**
@@ -122,12 +131,18 @@ The on-node display works by returning `ui.PreviewText` from `execute()` (delive
 `message.text` in the `executed` event) and rendering it into a read-only multiline widget
 via the bundled JS extension (`js/model_usage_counter.js`, served through `WEB_DIRECTORY`).
 
-Tracked loaders are defined in `LOADER_KEYS` in `__init__.py`. Add a line in the form
+Simple loaders are defined in `LOADER_KEYS` in `__init__.py`. Add a line in the form
 `class_type -> (model name key, bucket, folder_paths folder)` to track more. The third item
 is the `folder_paths` category used to verify the model exists: only names present in
 `folder_paths.get_filename_list(...)` are recorded, so arbitrary strings in a submitted
 prompt can't bloat `model_usage.json`. Confirm the `class_type` and inputs key from the
 prompt metadata of an actual output PNG, and the folder name from the loader's `INPUT_TYPES`.
+
+Loaders that bundle multiple models in a non-trivial input structure — like the rgthree
+Power Lora Loader, whose `inputs` hold many `lora_N` entries of the form
+`{"on": bool, "lora": "name", "strength": float, ...}` — are handled by a dedicated branch
+in `extract_models()` (`_extract_power_loras`). Adding another such loader means writing a
+similar branch.
 
 </details>
 

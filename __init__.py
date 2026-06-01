@@ -41,12 +41,24 @@ except ImportError:
 #   実機の出力PNGメタデータ(prompt)で class_type と inputs のキーを、対象拡張の INPUT_TYPES で
 #   folder_paths のフォルダ名を一度確認すること。
 # 注意: rgthree Power Lora Loader 等の LoRA は inputs 構造が特殊(複数LoRAを内部にまとめる)で、
-#   下の単純なキー抽出では拾えない。LoRA対応は extract_models() 内に専用分岐を足す形になる。
+#   下の単純なキー抽出では拾えない。専用分岐(_extract_power_loras)で拾う(下記)。
 # ----------------------------------------------------------------------------
 LOADER_KEYS = {
     "CheckpointLoaderSimple": ("ckpt_name", "checkpoint", "checkpoints"),
     "UNETLoader":             ("unet_name", "unet", "diffusion_models"),
 }
+
+# ----------------------------------------------------------------------------
+# rgthree Power Lora Loader 専用の定義(単純キー抽出では拾えない特殊形式)
+#   class_type は "Power Lora Loader (rgthree)"(= NAMESPACE 付きの登録名)。
+#   inputs は複数のLoRAを内部にまとめており、キーが "lora_" で始まる項目それぞれが
+#   1つのLoRA設定で、値は {"on": bool, "lora": "name.safetensors", "strength": float,
+#   "strengthTwo": float(任意)} の dict。on が真の項目を「実際に使われたLoRA」として記録する。
+#   (model / clip など "lora_" 以外のキーは接続用なので無視する)
+# ----------------------------------------------------------------------------
+POWER_LORA_LOADER = "Power Lora Loader (rgthree)"
+LORA_TYPE = "lora"        # 集計上の種別ラベル
+LORA_FOLDER = "loras"     # folder_paths 上の実在チェック用フォルダ名
 
 # ----------------------------------------------------------------------------
 # ノード表示に使う文言。将来の多言語化に備えてここに集約し、ロジック中に
@@ -152,6 +164,33 @@ def _valid_names(folder: str, cache: dict):
     return names
 
 
+def _extract_power_loras(node: dict, valid_cache: dict) -> list[tuple[str, str]]:
+    """rgthree Power Lora Loader ノードから有効なLoRA名を抽出する。
+
+    inputs は {"lora_N": {"on": bool, "lora": "name", "strength": float, ...}} の形。
+    キーが "lora_" で始まり on が真の項目だけを記録する(= rgthree 自身の有効判定と同じ。
+    strength=0 は除外しない: rgthree の get_enabled_loras_from_prompt_node も on のみを見る)。
+    他ローダーと同様、folder_paths の実在 LoRA 名と完全一致するもののみ記録する。
+    """
+    out = []
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        return out
+    valid = _valid_names(LORA_FOLDER, valid_cache)
+    for key, val in inputs.items():
+        if not (isinstance(key, str) and key.startswith("lora_")):
+            continue
+        if not (isinstance(val, dict) and val.get("on")):
+            continue
+        name = val.get("lora")
+        if not (isinstance(name, str) and name):
+            continue
+        if valid is not None and name not in valid:
+            continue  # 実在しないLoRA名は記録しない(任意文字列による肥大化防止)
+        out.append((LORA_TYPE, name))
+    return out
+
+
 def extract_models(prompt: dict) -> list[tuple[str, str]]:
     """prompt(API形式 dict)を走査し、(種別, モデル名) のリストを返す。
 
@@ -171,6 +210,10 @@ def extract_models(prompt: dict) -> list[tuple[str, str]]:
         if not isinstance(node, dict):
             continue
         ct = node.get("class_type")
+        # rgthree Power Lora Loader は複数LoRAを内部にまとめる特殊形式。専用分岐で拾う。
+        if ct == POWER_LORA_LOADER:
+            found.extend(_extract_power_loras(node, valid_cache))
+            continue
         spec = LOADER_KEYS.get(ct)
         if spec is None:
             continue

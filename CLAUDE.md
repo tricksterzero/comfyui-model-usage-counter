@@ -51,6 +51,23 @@ LOADER_KEYS = {
   `INPUT_TYPES`（`folder_paths.get_filename_list("...")`）で確認してから追加すること。
 - フォルダ名が間違っていると実在チェックで弾かれ**何も記録されなくなる**点に注意。
 
+### 特殊構造ローダー（複数モデルをまとめるタイプ）
+
+inputs がモデル名1個＝キー1個の単純形でないローダーは `LOADER_KEYS` では拾えない。
+`extract_models()` 内に専用分岐を足す。現状は rgthree **Power Lora Loader** に対応済み。
+
+- class_type は `Power Lora Loader (rgthree)`（rgthree の `get_name()` が NAMESPACE を付ける）。
+  inputs は `lora_1`, `lora_2`, ... のキーごとに
+  `{"on": bool, "lora": "名前.safetensors", "strength": float, "strengthTwo": float(任意)}`。
+- 抽出は `_extract_power_loras()`。**キーが `lora_` で始まり `on` が真**の項目だけを
+  種別 `lora`（フォルダ `loras`）として記録。`model` / `clip` 等の接続キーは無視する。
+- **`on` のみで判定**し strength=0 は除外しない（rgthree 自身の
+  `get_enabled_loras_from_prompt_node` も `on` のみを見るため、それに合わせた）。
+- 他ローダーと同様 `folder_paths.get_filename_list("loras")` との**完全一致のみ記録**
+  （肥大化防止）。rgthree はファジーマッチもするが、UI はファイル一覧から選んで widget に
+  格納するため prompt 値は通常 canonical 名と一致する。一致しなければ記録しない（安全側）。
+- 別の同種ローダーを足す場合はこれに倣った分岐を新設する。
+
 ## 実装上の注意（落とし穴）
 
 - **多重加算対策**: 同一グラフに複数のカウンタを置くと各ノードがグラフ全体を走査するため、
@@ -69,8 +86,10 @@ LOADER_KEYS = {
 
 ## 未対応 / 既知の制限
 
-- **LoRA カウント未実装**。rgthree Power Lora Loader 等は inputs 構造が特殊（複数 LoRA を内部に
-  まとめる）で単純なキー抽出では拾えない。対応するなら `extract_models()` に専用分岐を追加する。
+- **LoRA カウントは rgthree Power Lora Loader のみ対応**（上記「特殊構造ローダー」参照）。
+  それ以外の LoRA ローダー（標準 `LoraLoader` 等）は未対応。標準 LoraLoader は inputs が
+  単純（`lora_name` キー）なので `LOADER_KEYS` に1行足せば対応できるはず（class_type と
+  キーは実機の prompt で要確認）。他の集約型ローダーは個別分岐を追加する。
 - `pyproject.toml` に未設定のプレースホルダが残存（公開前に要設定）:
   - `PublisherId = "<your-publisher-id>"`
   - `requires-comfyui`（コメントアウト。動作確認した下限バージョンを設定する）
