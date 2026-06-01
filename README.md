@@ -25,7 +25,7 @@ Clone into your `custom_nodes` directory and restart ComfyUI:
 
 ```
 cd ComfyUI/custom_nodes
-git clone https://github.com/tricksterzero/comfyui-model-usage-counter
+git clone https://github.com/tricksterzero/comfyui-model-usage-counter.git
 ```
 
 Or install via ComfyUI-Manager ("Install via Git URL").

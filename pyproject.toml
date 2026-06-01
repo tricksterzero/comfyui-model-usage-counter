@@ -3,7 +3,7 @@
 # 英数字・ハイフン・アンダースコア・ピリオドのみ、先頭は数字・記号不可。
 name = "model-usage-counter"
 version = "1.0.0"
-description = "Records how many times each model (checkpoint / diffusion model) is used, incremented on every generation."
+description = "Records how many times each model (checkpoint / diffusion model / LoRA) is used, incremented on every generation."
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 classifiers = [
@@ -11,7 +11,6 @@ classifiers = [
 ]
 
 [project.urls]
-# <your-username> を自分の GitHub ユーザー名に置き換える。
 Repository = "https://github.com/tricksterzero/comfyui-model-usage-counter"
 "Bug Tracker" = "https://github.com/tricksterzero/comfyui-model-usage-counter/issues"
 

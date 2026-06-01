@@ -24,7 +24,7 @@
 
 ```
 cd ComfyUI/custom_nodes
-git clone https://github.com/tricksterzero/comfyui-model-usage-counter
+git clone https://github.com/tricksterzero/comfyui-model-usage-counter.git
 ```
 
 または ComfyUI-Manager の「Install via Git URL」から導入できます。
